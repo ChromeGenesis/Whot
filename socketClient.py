@@ -44,7 +44,7 @@ class Client:
             socket.timeout,
             ConnectionResetError,
             ConnectionAbortedError
-)
+        )
         self._input_exceptions = (
             KeyboardInterrupt,
             OSError,
