@@ -13,5 +13,5 @@ Located in the menu for how to play and other rules
 
 # Usage (Mainly for windows, linux has some issues with the GUI)
 * git clone https://github.com/ChromeGenesis/Whot/
-* cd WhotGUI
+* cd Whot
 * python3 Whot.pyw
