@@ -53,10 +53,6 @@ class Client:
 
         self.send_nickname()
         threading.Thread(target=self.recieve).start()
-        if not using_whot:
-            self.write()
-        # threading.Thread(target=self.write).start()
-
     
     def send_nickname(self):
         try:
@@ -108,22 +104,6 @@ class Client:
         else:
             data = data.decode('ascii')
             print(f'recieved message in proc data: {data}')
-    
-    def write(self):
-        while self._client_is_alive:
-            message = f'{self.nickname}: {input(">>> ")}'
-    
-            encoded_message = message.encode('ascii')
-            self.client.send(encoded_message)
-    
-            # Read input from the user and send messages until a specific condition is met
-            # while True:
-            #     user_input = input(">>> ")
-            #     if user_input == "quit":
-            #         self._client_is_alive = False
-            #         break
-            #     encoded_message = user_input.encode('ascii')
-            #     self.client.send(encoded_message)
     
     def send_data(
             self, 
