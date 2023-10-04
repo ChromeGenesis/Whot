@@ -952,19 +952,23 @@ class Whot(images):
         if server_choice == 'start server':
             self.start_init_server_thread(host, port)
             seed = self.generate_shuffle_seed()
-            self.start_init_client_thread()
-            player_turn = self.reinitialize_cards(onlinePlayer=True, shuffle_seed=seed, conn_type='server')
-            player_turn = 'op' if player_turn == 'p2' else 'p2'
-            init_data = {
-                'seed': seed,
-                'player_turn': player_turn,
-                'nickname': nickname
-            }
-            self.send_init_data_to_server(data=json.dumps(init_data), data_type='INIT_DATA')
+            self.start_init_client_thread(host, port)
+            try:
+                player_turn = self.reinitialize_cards(onlinePlayer=True, shuffle_seed=seed, conn_type='server')
+                player_turn = 'op' if player_turn == 'p2' else 'p2'
+                init_data = {
+                    'seed': seed,
+                    'player_turn': player_turn,
+                    'nickname': nickname
+                }
+                self.send_init_data_to_server(data=json.dumps(init_data), data_type='INIT_DATA')
+            except (OSError, ConnectionRefusedError, AttributeError, TimeoutError, tk.TclError) as e:
+                print(e)
+                self._connectionFailed = True
         
         else: # choice -> 'join server'
             self._onlinePlayerActive = True
-            self.start_init_client_thread()
+            self.start_init_client_thread(host, port)
             init_data = self.get_init_data_from_server(data_type='INIT_DATA')
             seed = init_data['seed']
             player_turn = init_data['player_turn']
@@ -1036,10 +1040,12 @@ class Whot(images):
         return return_value
     
     def start_init_server_thread(self, host='127.0.0.1', port=55555):
+        print('server host and port -->', host, port)
         init_server_thread = threading.Thread(target=self.init_server, args=(host, port))
         init_server_thread.start()
     
     def start_init_client_thread(self, host='127.0.0.1', port=55555):
+        print('client host and port -->', host, port)
         init_client_thread = threading.Thread(target=self.init_client, args=(host, port))
         init_client_thread.start()
 
@@ -1048,10 +1054,15 @@ class Whot(images):
         listen_op_thread.start()
     
     def init_server(self, host=None, port=None):
-        server = socketServer.Server(host, port)
-        self._onlineServer = server
-        print('server -->', self._onlineServer)
-        return server
+        try:
+            server = socketServer.Server(host, port)
+        except (ConnectionRefusedError, OSError) as e:
+            print(e)
+            self._connectionFailed = True
+        else:
+            self._onlineServer = server
+            print('server -->', self._onlineServer)
+            return server
 
     def init_client(self, host=None, port=None):
         try:
@@ -1095,6 +1106,11 @@ class Whot(images):
             card = self._onlineClient.client_data['card']
             mart = self._onlineClient.client_data['mart']
             request = self._onlineClient.client_data['request']
+            continue_ = self._onlineClient.client_data['continue']
+
+            if continue_:
+                print('\n^^^^ onlinep sent continue')
+                self.continue_from_hold_or_suspension()
 
             if card:
                 print('\n@@@@ onlineP sent card', card)
@@ -1160,7 +1176,7 @@ class Whot(images):
         self._root.title(self._title)
     
     def handle_onlinep_todos(self, card=None):
-        print('online_todos -->', self._onlinep_todo)
+        print('\n*** online_todos -->', self._onlinep_todo)
         if self._onlinep_todo['pick_two'] > 0:
             self._onlinep_todo['pick_two'] -= 1
             self.set_player_turn('p2' if self._onlinep_todo['pick_two'] == 0 else 'op')
@@ -1171,13 +1187,15 @@ class Whot(images):
         
         if self._onlinep_todo['hold_on']:
             print('Continuing for P2 from OP')
-            self._popup_message("Continue", "Continue", 400)
+            # self._popup_message("Continue", "Continue", 400)
+            self._onlineClient.send_data('Continue', data_type='CONTINUE')
             self._onlinep_todo['hold_on'] =  False
             self.set_player_turn('p2')
 
         if self._onlinep_todo['suspension']:
             print('Continuing for P2 from OP')
-            self._popup_message("Continue", "Continue", 400)
+            # self._popup_message("Continue", "Continue", 400)
+            self._onlineClient.send_data('Continue', data_type='CONTINUE')
             self._onlinep_todo['suspension'] = False
             self.set_player_turn('p2')
         
@@ -1383,7 +1401,7 @@ class Whot(images):
                     self._root.after(500, lambda: self.comp_card_streak(1))
                 else:
                     self.set_player_turn('op')
-                    self.continue_from_hold_or_suspension()
+                    # self.continue_from_hold_or_suspension()
                 
             # self.set_player_turn('comp')
 
@@ -1423,12 +1441,16 @@ class Whot(images):
                     self._root.after(500, lambda: self.comp_card_streak(8))
                 else:
                     self.set_player_turn('op')
-                    self.continue_from_hold_or_suspension()
+                    # self.continue_from_hold_or_suspension()
             # self.set_player_turn('p2')
     
     def continue_from_hold_or_suspension(self):
         print('\nin continue from suspension or hold, online todos -->', self._onlinep_todo)
-        ...
+        client_data = self._onlineClient.client_data
+        continue_ = client_data['continue']
+        if continue_:
+            self._popup_message("Continue", "Continue", 400)
+            client_data['continue'] = False
         
     ##################################################################################################
 
