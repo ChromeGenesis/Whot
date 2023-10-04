@@ -10,7 +10,6 @@ class Whot(images):
     def __init__(self, shuffle_seed=None):
         if shuffle_seed:
             random.seed(shuffle_seed)
-            print('\n$$$$$ Seed implemented in main -->', shuffle_seed, '$$$$$\n')
         
         super().__init__()
         
