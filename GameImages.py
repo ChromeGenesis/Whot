@@ -33,14 +33,11 @@ class images:
         self._misc_whot1 = tk.PhotoImage(file=os.path.join(misc_dir, "Misc_whot2.png"))
 
         self._DepotMarket = circle + triangle + square + cross + star + whot
-        # print('DepotMarket -->', self._DepotMarket)
-        # print('length -->', len(self._DepotMarket))
         
     def create_image_data(self, directory: str) -> list[tuple[tk.PhotoImage, tuple[str, int]]]:
         dir_list = os.listdir(directory)
         return [
             (
-                # tk.PhotoImage(file=f"{directory}/{filename}"),
                 tk.PhotoImage(file=os.path.join(directory, filename)),
                 (os.path.basename(directory), int(filename.split('_')[-1].split('.')[0]))
             )
