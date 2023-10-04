@@ -11,7 +11,7 @@ Located in the menu for how to play and other rules
 * Upgraded look and feel
 * Added multiplayer
 
-# Usage (Mainly for windows, linux has some issues with the GUI)
+# Usage (Mainly for windows | linux has some issues with the GUI)
 * git clone https://github.com/ChromeGenesis/Whot/
 * cd Whot
 * python3 Whot.pyw
