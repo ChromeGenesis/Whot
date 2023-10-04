@@ -15,12 +15,12 @@ from functools import partial
 from typing import Literal, Union
 
 
-class WhotGtk(images):
+class Whot(images):
     """Naija Whot Game in Grand Style - By Genesis Chrome"""
     def __init__(self):
         self._root = tk.Tk()
         Pmw.initialise(self._root)
-        self._orig_size = '760x690+592+7'
+        self._orig_size = '650x690+706+6' #760x690+592+7'
         self._root.geometry(self._orig_size)
         self._title = 'Whot Game'
         self._root.title(self._title)
@@ -83,6 +83,8 @@ class WhotGtk(images):
         self.__check2_played = False
         self.__checkcomp_played = False
         self.__checkop_played = False
+
+        self.__current_player = None
         ##################################################################
         
         ##################################################################
@@ -208,11 +210,11 @@ class WhotGtk(images):
         final_choice = (choice(who_plays_first))
         if final_choice == 'player2':
             self.set_player_turn('p2')
-            self._update_turn_indicator()
         else:
             self.set_player_turn('comp')
-            self._update_turn_indicator()
         print(f'choice is: {final_choice}')
+
+        self.__current_player = final_choice
 
         ####################################################################################
         # Grid Counter, Game Started and Show Setting At Startup Variables
@@ -264,6 +266,7 @@ class WhotGtk(images):
             ))
 
     def load_config_file(self):
+        self._root.after(10_000, lambda: print(self._root.winfo_geometry()))
         try:
             with open('./config.pkl', 'rb') as config_file:
                 self._config_file = pickle.load(config_file)
@@ -529,6 +532,24 @@ class WhotGtk(images):
                 saved.after(400, saved.pack_forget)
 
     
+    def switch_player_turn(self):
+        player2, computer, onlinep = ['player2', 'p2'], ['computer', 'comp'], ['onlinep', 'op']
+        if not self._onlinePlayerActive:
+            if self.__current_player in player2:
+                self.__current_player = 'computer'
+                self.set_player_turn('comp')
+            elif self.__current_player in computer:
+                self.__current_player = 'player2'
+                self.set_player_turn('p2')
+        else:
+            if self.__current_player in player2:
+                self.__current_player = 'onlineplayer'
+                self.set_player_turn('op')
+            elif self.__current_player in onlinep:
+                self.__current_player = 'player2'
+                self.set_player_turn('p2')
+
+    
     def set_player_turn(self, player: Literal['comp', 'p2', 'op']):
         """Sets player's turn"""
 
@@ -546,6 +567,8 @@ class WhotGtk(images):
         elif player == 'op':
             self.__checkop_played = False
             self.__check2_played = True
+
+        self._update_turn_indicator()
 
     
     def get_player_turn(self, player: Literal['comp', 'p2', 'op']) -> bool:
@@ -658,9 +681,7 @@ class WhotGtk(images):
                     self.go_gen_mart(player)
                     self.hold_on(player)
                     self.suspension(player)
-            
-                    self._update_turn_indicator()
-            
+                        
                     self._checkmate()
             except Main.WhotException as e:
                 tmb.showwarning(title="INVALID MOVE", message=str(e).upper())
@@ -703,7 +724,6 @@ class WhotGtk(images):
         
         self.display_number_of_cards('player2')
         self.set_player_turn('comp') if not self._onlinePlayerActive else self.set_player_turn('op') 
-        self._update_turn_indicator()
         self.repopulate_cards()
 
         if self._check2 == 1:
@@ -718,9 +738,9 @@ class WhotGtk(images):
         picked two cards) and then unfreezes player2 cards (buttons) - for PICK TWO"""
 
         player = 'comp' if not self._onlinePlayerActive else 'op'
+        print(f'picking two for p2 by {player}')
         self.p2_mart(2)
         self.set_player_turn('p2')
-        self._update_turn_indicator()
         self._root.title(f'{self._title} - PICK TWO')
 
         if self._check2 == 2: # Done picking two cards
@@ -732,9 +752,7 @@ class WhotGtk(images):
             self._market_btn.config(command=self.p2_mart)
             self._root.bind("<Return>", self.p2_mart)
             self._root.title(self._title)
-    
-            self._update_turn_indicator()
-    
+        
 
     def _check_p1(self, player='comp', event=None):
         """Checks whether player2 clicked the mart button once (in other words, checks whether player2 has
@@ -749,9 +767,7 @@ class WhotGtk(images):
             self._check1 = 0
             self._market_btn.config(command=self.p2_mart)
             self._root.bind("<Return>", self.p2_mart)
-    
-            self._update_turn_indicator()
-    
+        
 
     def p2_request_card_with_20(self, card: list[tuple[tk.PhotoImage, tuple[str, int]]]):
         """Player2 (actual player) demands a particular card from computer after playing whot 20"""
@@ -850,7 +866,8 @@ class WhotGtk(images):
             try:
                 [lab.grid_forget() for lab in self._depot_onlinep_labels]
             except AttributeError as e:
-                print(e)
+                pass
+                # print(e)
             self._whot.InitOnlinePlayerCards()
         else:
             self._whot.InitComputerCards()
@@ -865,10 +882,8 @@ class WhotGtk(images):
         
         if not player_turn:
             player_turn = 'p2' if choice(('player2', 'onlinep')) == 'player2' else 'op'
-        print('about to set player turn for:', player_turn)
+        self.__current_player = player_turn
         self.set_player_turn(player_turn)
-        # self.set_player_turn('p2')
-        self._update_turn_indicator()
         self._set_theme(self._config_file.get('theme'))
 
         return player_turn
@@ -1082,17 +1097,18 @@ class WhotGtk(images):
             request = self._onlineClient.client_data['request']
 
             if card:
-                print('\nonlineP sent card', card)
+                print('\n@@@@ onlineP sent card', card)
                 index = self.get_onlinep_card_index(card)
                 self.set_player_turn('op')
                 self.onlinePlayer_play(self._label_reference[index][0], self._onlinep_labels[index])
 
             if mart: # Set for OP to play again
-                print('\nonlinep went to mart')
+                print('\n!!!! nonlinep went to mart')
                 self.set_player_turn('op')
                 self.onlinep_mart()
             
             if request:
+                print('\n$$$$ onlinep sent request')
                 self.onlinep_request_card_with_20(request)
             
             time.sleep(0.5)
@@ -1112,17 +1128,15 @@ class WhotGtk(images):
             raise Main.WhotException('Cant Find OnlineP Card In Cardstack')
 
         return index
-        # self.set_player_turn('op')
-        # self.onlinePlayer_play(self._label_reference[index][0], self._onlinep_labels[index])
-        
+            
 
     def onlinep_mart(self):
         if not self.get_player_turn('op') or self.__check_checkmate:
+            print('\nin onlinep mart, its not op turn for mart')
             return
 
         for o, i in enumerate(self._label_reference):
             if not i:
-                # if not gone_to_mart_before:
                 self._onlinep.gomart()
 
                 self._label_reference[o].append(self._onlinep.cards()[-1])
@@ -1142,32 +1156,27 @@ class WhotGtk(images):
         self.display_number_of_cards('onlinep')
         self.handle_onlinep_todos()
         
-        self._update_turn_indicator()
         self.repopulate_cards(onlinePlayer=True)
         self._root.title(self._title)
     
     def handle_onlinep_todos(self, card=None):
-        print('\n### in the beginnin of op todos, turn p2 & op -->', [self.__check2_played, self.__checkop_played])
         print('online_todos -->', self._onlinep_todo)
         if self._onlinep_todo['pick_two'] > 0:
             self._onlinep_todo['pick_two'] -= 1
-            if self._onlinep_todo['pick_two'] == 0:
-                print('pick two -->', self._onlinep_todo['pick_two'])
-                self.set_player_turn('p2')
-            else:
-                self.set_player_turn('op')
-            # self.set_player_turn('p2' if self._onlinep_todo['pick_two'] == 0 else 'op')
+            self.set_player_turn('p2' if self._onlinep_todo['pick_two'] == 0 else 'op')
         
         if self._onlinep_todo['general_market'] > 0:
             self._onlinep_todo['general_market'] -= 1
             self.set_player_turn('p2')
         
         if self._onlinep_todo['hold_on']:
+            print('Continuing for P2 from OP')
             self._popup_message("Continue", "Continue", 400)
             self._onlinep_todo['hold_on'] =  False
             self.set_player_turn('p2')
 
         if self._onlinep_todo['suspension']:
+            print('Continuing for P2 from OP')
             self._popup_message("Continue", "Continue", 400)
             self._onlinep_todo['suspension'] = False
             self.set_player_turn('p2')
@@ -1175,13 +1184,10 @@ class WhotGtk(images):
         if card and card[1][1] == 20:
             self.set_player_turn('op')
         
-        if not all(self._onlinep_todo.values()):
-            print('no True values setting to p2...')
+        if not any(self._onlinep_todo.values()):
+            print('no True values setting to p2...', self._onlinep_todo.values())
             self.set_player_turn('p2')
-        # self.set_player_turn('p2')
-        
-        print('after op todos, turn p2 & op -->', [self.__check2_played, self.__checkop_played])
-
+        print('joined or started -->', self._server_choice, '\n')
 
     def onlinep_request_card_with_20(self, request: str):
         client_data = self._onlineClient.client_data
@@ -1190,6 +1196,7 @@ class WhotGtk(images):
             client_data['request'] = ''
             return
 
+        self.set_player_turn('p2')
         self._player2.check_requested = True        
 
         print('in req with card 20, request -->', request)
@@ -1197,7 +1204,6 @@ class WhotGtk(images):
         tmb.showinfo("Request", f"I NEED {request.upper()}")
         self._root.title(f'{self._title} - Request {request.upper()}')
         client_data['request'] = ''
-        # self.set_player_turn('p2')
 
 
     def onlinePlayer_play(self, 
@@ -1226,8 +1232,11 @@ class WhotGtk(images):
                 self.hold_on('p2')
                 self.suspension('p2')
 
-                self.set_player_turn('p2')
-                self._update_turn_indicator()
+                if card[1][1] == 20:
+                    print('\nOP CARD IS 20, SETTING OP TO PLAY AGAIN')
+                    self.set_player_turn('op')
+                # else:
+                #     self.set_player_turn('p2')
         
                 self._checkmate()
             
@@ -1288,15 +1297,16 @@ class WhotGtk(images):
                 powerup = self._computer.comp_powerup_2
         
         
-        if powerup[0] == 2:
-            self._popup_message("Pick Two", "Pick two cards from the mart")
-            self._root.title(f'{self._title} - PICK TWO')
-            for btn in self._depot_p2_btns:
-                btn.config(state='disabled')
-            self._market_btn.config(command=self._check_p2)
-            self._root.unbind("<Return>")
-            self._root.bind("<Return>", self._check_p2)
-            powerup.insert(0, 0)
+            if powerup[0] == 2:
+                print('\nPICK TWO')
+                self._popup_message("Pick Two", "Pick two cards from the mart")
+                self._root.title(f'{self._title} - PICK TWO')
+                for btn in self._depot_p2_btns:
+                    btn.config(state='disabled')
+                self._market_btn.config(command=self._check_p2)
+                self._root.unbind("<Return>")
+                self._root.bind("<Return>", self._check_p2)
+                powerup.insert(0, 0)
     
     def go_gen_mart(self, player: Literal['p2', 'comp', 'op']):
         """Makes Player go to general market"""
@@ -1313,6 +1323,7 @@ class WhotGtk(images):
             return
         
         elif player == 'op':
+            print(f'\nGENERAL MARKET - {player}')
             powerup = self._player2.p2_powerup_14
             if powerup[0] == 14:
                 self.set_player_turn('op')
@@ -1327,6 +1338,7 @@ class WhotGtk(images):
                 powerup = self._computer.comp_powerup_14
 
         if powerup[0] == 14:
+            print(f'\nGENERAL MARKET - {player}')
             self._popup_message("General Market", "General Market")
             self._root.title(f'{self._title} - GENERAL MARKET')
             for i in self._depot_p2_btns:
@@ -1347,10 +1359,10 @@ class WhotGtk(images):
             return
         
         elif player == 'op':
+            print(f'\nHOLD ON - {player}')
             powerup = self._player2.p2_powerup_1
             if powerup[0] == 1:
                 self.set_player_turn('p2')
-                self._update_turn_indicator()
                 self._onlinep_todo['hold_on'] = True
                 powerup.insert(0, 0)
                 return
@@ -1361,13 +1373,17 @@ class WhotGtk(images):
             else:
                 powerup = self._computer.comp_powerup_1
         
-        if powerup[0] == 1:
-            self._popup_message("Hold On", "Hold On")
-            self._root.title(f'{self._title} - HOLD ON')
-            powerup.insert(0, 0)
-            self._checkmate()
-            if player == 'p2' and not self._onlinePlayerActive:
-                self._root.after(500, lambda: self.comp_card_streak(1))
+            if powerup[0] == 1:
+                print(f'\nHOLD ON - {player}')
+                self._popup_message("Hold On", "Hold On")
+                self._root.title(f'{self._title} - HOLD ON')
+                powerup.insert(0, 0)
+                self._checkmate()
+                if not self._onlinePlayerActive:
+                    self._root.after(500, lambda: self.comp_card_streak(1))
+                else:
+                    self.set_player_turn('op')
+                    self.continue_from_hold_or_suspension()
                 
             # self.set_player_turn('comp')
 
@@ -1382,10 +1398,10 @@ class WhotGtk(images):
             return
         
         elif player == 'op':
+            print(f'\nSUSPENSION - {player}')
             powerup = self._player2.p2_powerup_8
             if powerup[0] == 8:
                 self.set_player_turn('p2')
-                self._update_turn_indicator()
                 self._onlinep_todo['suspension'] = True
                 powerup.insert(0, 0)
                 return
@@ -1395,16 +1411,24 @@ class WhotGtk(images):
                 powerup = self._onlinep.op_powerup_8
             else:
                 powerup = self._computer.comp_powerup_8
-        if powerup[0] == 8:
-            self._popup_message("Hold On", "Suspension")
-            self._root.title(f'{self._title} - SUSPENSION')
+            if powerup[0] == 8:
+                print(f'\nSUSPENSION - {player}')
+                self._popup_message("Hold On", "Suspension")
+                self._root.title(f'{self._title} - SUSPENSION')
 
-            powerup.insert(0, 0)
-            self._checkmate()
+                powerup.insert(0, 0)
+                self._checkmate()
 
-            if not self._onlinePlayerActive:
-                self._root.after(500, lambda: self.comp_card_streak(8))
+                if not self._onlinePlayerActive:
+                    self._root.after(500, lambda: self.comp_card_streak(8))
+                else:
+                    self.set_player_turn('op')
+                    self.continue_from_hold_or_suspension()
             # self.set_player_turn('p2')
+    
+    def continue_from_hold_or_suspension(self):
+        print('\nin continue from suspension or hold, online todos -->', self._onlinep_todo)
+        ...
         
     ##################################################################################################
 
@@ -1433,7 +1457,6 @@ class WhotGtk(images):
                 self.suspension('p2')
 
                 self.set_player_turn('p2')
-                self._update_turn_indicator()
         
                 self._checkmate()
             
@@ -1472,8 +1495,6 @@ class WhotGtk(images):
                 self.parse_and_remove_comp_cards(containers[3], card, idx)
                 lab_ref_idx = idx
                 break
-
-        self._update_turn_indicator()
         
         found_valid_card = []
         # Must not change the order of containers
@@ -1536,7 +1557,6 @@ class WhotGtk(images):
                     break
 
             self.set_player_turn('comp')
-            self._update_turn_indicator()
     
             if found_card_streak_no:
                 self.comp_play(
@@ -1550,7 +1570,6 @@ class WhotGtk(images):
 
                 self._root.after(250, lambda: self._popup_message("Continue", "Continue", 400))
                 self.set_player_turn('p2')
-                self._update_turn_indicator()
                 
         elif self._player2.check_requested:
             self._root.after(500, self.compPlayEngine)
@@ -1577,7 +1596,6 @@ class WhotGtk(images):
 
             self.display_number_of_cards('computer')
             self.set_player_turn('p2')    
-            self._update_turn_indicator()
             self.repopulate_cards()
             self._root.title(self._title)
 
@@ -1625,8 +1643,6 @@ class WhotGtk(images):
                     self._label_reference.pop(self._label_reference.index(i))
                     break
         
-            self._update_turn_indicator()
-
             if self._found_20:
                 i = self._found_20[0]
                 self.comp_play(i[1][0], self._computer_labels.get(i[0]))
@@ -1740,5 +1756,5 @@ class WhotGtk(images):
 
 
 if __name__ == '__main__':
-    app = WhotGtk()
+    app = Whot()
     app._mainloop()
