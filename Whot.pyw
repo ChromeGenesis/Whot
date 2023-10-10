@@ -24,10 +24,11 @@ class Whot(images):
         self._root.geometry(self._orig_size)
         self._title = 'Whot Game'
         self._root.title(self._title)
+        ttk.Style().theme_use('clam')
         self._root.protocol("WM_DELETE_WINDOW", self.__exit)
         super().__init__()
 
-        self._config_file: dict[str, Union[str, bool]] = {}
+        self._config_file: dict[str, str | bool | dict[str, str | int]] = {}
         self.load_config_file()
         
         read_name = self._config_file.get('name')
@@ -126,7 +127,7 @@ class Whot(images):
         
         settings_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label='Setting', menu=settings_menu)
-        settings_menu.add_command(label='Settings', accelerator='Ctrl+S', compound='left', command=self._settings)
+        settings_menu.add_command(label='Settings', accelerator='Ctrl+S', compound='left', command=self.settings)
         
         multiplayer_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label='Multiplayer', menu=multiplayer_menu)
@@ -137,6 +138,21 @@ class Whot(images):
         self._theme_var = tk.IntVar()
         self._difficulty_var = tk.StringVar()
         
+        self._themes_dict = {
+            'green1': 'green yellow',
+            'green2': '#000fff000',
+            'blue1': 'royal blue',
+            'blue2': 'dodger blue',
+            'aquamarine': 'Aquamarine',
+            'Default': '#d9d9d9',
+            'yellow': 'yellow',
+            'magenta': 'magenta',
+            'gold': 'gold',
+            'red': 'red',
+            'dark violet': 'dark violet',
+            'pink': 'pink',
+            'black': 'black'
+        }
         self._theme_colors = ['yellow', 'blue1', 'blue2', 'red', 'aquamarine', 'green1', 'green2', 'magenta', 'gold',
                               'dark violet', 'pink', 'black', 'Default']
         
@@ -181,7 +197,7 @@ class Whot(images):
         self._root.bind_all("<Control-m>", self.Manual)
         self._root.bind_all("<Control-r>", self.__restart)
         self._root.bind_all("<Control-M>", self.start_multiplayer_server_client)
-        self._root.bind("<Control-s>", self._settings)
+        self._root.bind("<Control-s>", self.settings)
         self._root.bind("<Return>", self.p2_mart)
         self._root.bind_all("<F11>", self._toggle_on_fullscreen)
         self._root.bind_all("<Escape>", self._toggle_off_fullscreen)
@@ -227,12 +243,15 @@ class Whot(images):
         # Update n Run
         ####################################################################################
         if self._config_file.get('show_setting'):
-            self._settings()
+            self.settings()
         self._difficulty_var.set(self._config_file.get('mode'))
         
         self._root.after(5800, self.compPlayEngine)
         self._root.after(1200, lambda: self.display_cards_animation([self._player2_btns[i] for i in range(5)]))
-        self._get_theme_conf()
+        
+        theme = self._themes_dict.get(self._config_file.get('theme'))
+        self._theme_var.set(self._theme_colors.index(theme))
+        self._set_theme(theme)
         ####################################################################################
         # END
         ####################################################################################
@@ -279,7 +298,13 @@ class Whot(images):
             'name': 'Genesis',
             'theme': 'Default',
             'mode': 'easy',
-            'show_setting': True
+            'show_setting': True,
+            'multiplayer': {
+                'host': '127.0.0.1',
+                'port': 55555,
+                'nickname': 'Genesis',
+                'server_choice': 'start server'
+            }
         }
 
         with open('./config.pkl', 'wb+') as config_file:
@@ -299,15 +324,14 @@ class Whot(images):
             pickle.dump(self._config_file, config_loc)
 
         
-    def _settings(self, event=None):
+    def settings(self, event=None):
         """Settings for whot game"""
         top = tk.Toplevel(self._root)
         top.transient(self._root)
+        ttk.Style().theme_use('clam')
         top.title(f'{self._title} - Settings')
         
-        w, h = int(self._root.winfo_screenwidth() / 6), int(self._root.winfo_screenheight() / 4)
-        x, y = self._root.winfo_x(), self._root.winfo_y()
-        top.geometry('{}x{}+{}+{}'.format(350, 420, x+w, y+h))
+        top.geometry(self.set_toplevel_to_center(height=350, width=350))
         top.resizable(False, False)
             
         root_tab = ttk.Notebook(top)
@@ -320,7 +344,7 @@ class Whot(images):
         root_tab.add(name_tab, text='Name')
         root_tab.add(mode_tab, text='Mode')
         
-        root_tab.grid(row=0, column=0, sticky='nsew')
+        root_tab.place(relx=0.0, rely=0.0, relheight=1.0, relwidth=1.0)
             
         self._choose_theme(theme_tab, root=top)
         self._get_name(name_tab)
@@ -335,9 +359,9 @@ class Whot(images):
             )
         )
         self._show_setting_at_startup.set(self._config_file.get('show_setting'))
-        show_setting.grid(row=6, column=0, sticky='w')
+        show_setting.place(relx=0.029, rely=0.923, relwidth=0.440, relheight=0.0, height=31)
         ok_btn = ttk.Button(top, text='Ok', command=lambda: self.game_started(top))
-        ok_btn.grid(row=7, column=0, sticky='e')
+        ok_btn.place(relx=0.657, rely=0.923, height=25, width=96)
             
         top.focus_set()
         top.protocol('WM_DELETE_WINDOW', lambda: self.game_started(top))
@@ -352,7 +376,7 @@ class Whot(images):
     def choose_difficulty_mode(self, window: tk.Frame):
         """To choose the mode of the game, whether easy or hard"""
         
-        hard_radbtn = tk.Radiobutton(
+        hard_radbtn = ttk.Radiobutton(
             window, 
             text='Hard', 
             var=self._difficulty_var, 
@@ -360,31 +384,33 @@ class Whot(images):
             command=lambda: self._write_config('mode', self._difficulty_var.get())
             )
             
-        medium_radbtn = tk.Radiobutton(
+        medium_radbtn = ttk.Radiobutton(
             window, text='Medium', 
             var=self._difficulty_var, 
             value='medium',
             command=lambda: self._write_config('mode', self._difficulty_var.get())
             )
             
-        easy_radbtn = tk.Radiobutton(
+        easy_radbtn = ttk.Radiobutton(
             window, text='Easy', 
             var=self._difficulty_var, 
             value='easy',
             command=lambda: self._write_config('mode', self._difficulty_var.get())
             )
         
-        hard_radbtn.grid(row=1, column=0, sticky='w')
-        medium_radbtn.grid(row=2, column=0, sticky='w')
-        easy_radbtn.grid(row=3, column=0, sticky='w')
-        tk.Label(window, text='Choose Desired Mode').grid(row=0, column=0)
-        tk.Label(window, text="Can only be set once during a particular game session").grid(
-            row=4, column=0, sticky='s')
+        hard_radbtn.place(relx=0.376, rely=0.268, relwidth=0.171, relheight=0.0, height=26)
+        medium_radbtn.place(relx=0.376, rely=0.435, relwidth=0.228, relheight=0.0, height=27)
+        easy_radbtn.place(relx=0.376, rely=0.602, relwidth=0.171, relheight=0.0, height=26)
+        ttk.Label(window, text='Choose Desired Mode',
+                 font="-family {Comic Sans MS} -size 16 -weight bold -slant italic").place(
+                     relx=0.202, rely=0.033, height=57, width=395)
+        ttk.Label(window, text='(Can Only Be Set Once Per Game Session)').place(
+            relx=0.202, rely=0.769, height=26, width=225)
         window.focus_set()
         
         if self._game_started:
             for i in [hard_radbtn, medium_radbtn, easy_radbtn]:
-                i.config(state='disabled')  
+                i.configure(state='disabled')  
 
     def set_toplevel_to_center(self, height: int, width: int):
         root_width = self._root.winfo_width()
@@ -394,20 +420,26 @@ class Whot(images):
 
         return f'{width}x{height}+{x}+{y}'
         
-    def _choose_theme(self, window: tk.Frame, root: tk.Toplevel=None):
-        """For choosing desired theme from the themes list"""        
+    def _choose_theme(self, window: ttk.Frame, root: tk.Toplevel=None):
+        """For choosing desired theme from the themes list"""  
+
+        # theme_label = ttk.Label(window, text="Select Theme:",
+        #     font="-family {Comic Sans MS} -size 16 -weight bold -slant italic")
+        # theme_label.place(relx=0.279, rely=0.014, height=39, width=155)  
+        
         theme_radbtns = []
         radbtns_dict = {}
+        num_per_row = 2
+        padx, pady = 19, 10
+
         for o, i in enumerate(self._theme_colors):
-            theme_radbtns.append(tk.Radiobutton(window, text=str(i).upper(), var=self._theme_var,
-                                            value=o, command=self._parse_theme))
+            rbtn = ttk.Radiobutton(window, text=str(i).upper(), var=self._theme_var,
+                                   value=o, command=self._parse_theme)
+            rbtn.grid(row=(o // num_per_row), column=o % num_per_row, padx=padx, pady=pady, sticky="w")
+            theme_radbtns.append(rbtn)
             
         for i in range(len(self._theme_colors)):
             radbtns_dict[i] = theme_radbtns[i]
-            
-        for i in range(len(self._theme_colors)):
-            radbtns_dict[i].grid(row=1+i, column=0, sticky='w')
-        tk.Label(window, text="Choose Your Desired Theme").grid(row=0, column=0, sticky='e')
 
         root.bind("<Down>", partial(self._scroll_theme, 'down'))
         root.bind("<Up>", partial(self._scroll_theme, 'up'))
@@ -433,28 +465,10 @@ class Whot(images):
     def _get_theme_conf(self):
         """Gets the theme configuration and updates the theme var"""
         theme = self._config_file.get('theme')
-        if theme in self._theme_colors:
-            theme_index = self._theme_colors.index(theme)
-            self._set_theme(theme)
-            self._theme_var.set(theme_index)
+        return self._themes_dict.get(theme)
         
     def _set_theme(self, color: str):
-        self._themes_dict = {
-            'green1': 'green yellow',
-            'green2': '#000fff000',
-            'blue1': 'royal blue',
-            'blue2': 'dodger blue',
-            'aquamarine': 'Aquamarine',
-            'Default': '#d9d9d9',
-            'yellow': 'yellow',
-            'magenta': 'magenta',
-            'gold': 'gold',
-            'red': 'red',
-            'dark violet': 'dark violet',
-            'pink': 'pink',
-            'black': 'black'
-        }
-        
+
         if color not in self._themes_dict:
             self._write_config('theme', 'Default')
             return
@@ -462,6 +476,7 @@ class Whot(images):
         theme_color = self._themes_dict.get(color)
         
         try:
+            self._root.option_add('*foreground', theme_color)
             for btn_lab in self._depot_comp_labels + self._depot_p2_btns:
                 btn_lab.config(bg=theme_color)
             self._played_card.config(bg=theme_color)
@@ -495,7 +510,7 @@ class Whot(images):
         theme = self._config_file.get('theme')
         theme = '#000000' if theme == 'Default' else theme
             
-        label = tk.Label(top, text=text, fg=theme, font='Consolas 13 bold',
+        label = tk.Label(top, text=text, foreground=theme, font='Consolas 13 bold',
                 padx=20, pady=20, wraplength=wraplength)
         label.pack(fill='both', expand=True)
         
@@ -505,31 +520,33 @@ class Whot(images):
         top.after(duration, top.destroy)
         
     
-    def _get_name(self, window):
+    def _get_name(self, window: ttk.Frame):
         """Gets desired name from player"""
+        theme = self._themes_dict.get(self._config_file.get('theme'))
         entry_var = tk.StringVar()
-        tk.Label(window, text='Enter Your Desired Name Here').pack()
-        name_entry = tk.Entry(window, width=50, textvariable=entry_var)
-        name_entry.pack()
-        ok_button = ttk.Button(window, text='Ok', command=partial(self._set_name, entry_var, window))
-        ok_button.pack()
-        tk.Label(window, text='Restart to initiate changes...').pack()
-        name_entry.bind("<Return>", partial(self._set_name, entry_var, window))
-        try:
-            former_name = self._config_file.get('name')
-            entry_var.set(former_name)
-        except:
-            pass
+        name_label = ttk.Label(window, text='Enter Desired Name:',
+                 font="-family {Comic Sans MS} -size 16 -weight bold -slant italic")
+        name_label.place(relx=0.202, rely=0.067, height=57, width=225)
+        
+        name_entry = ttk.Entry(window, textvariable=entry_var)
+        name_entry.configure(font="-family {Comic Sans MS} -size 16 -weight bold -slant italic",
+                             foreground=theme)
+        name_entry.place(relx=0.173, rely=0.334, relheight=0.104, relwidth=0.653)
+        
+        save_button = ttk.Button(window, text='Save', command=lambda: self._set_name(entry_var))
+        save_button.place(relx=0.347, rely=0.669, height=35, width=96)
+        ttk.Label(window, text='(Restart To Initiate Changes)').place(relx=0.289, rely=0.468, height=16, width=155)
+        name_entry.bind("<Return>", lambda: self._set_name(entry_var))
+
+        former_name = self._config_file.get('name')
+        entry_var.set(former_name)
         name_entry.focus_set()
             
-    def _set_name(self, name: tk.StringVar, window=None, event=None):
+    def _set_name(self, name: tk.StringVar, event=None):
         """Sets (Registers) the desired name to the configuration file"""
-        if name and name.get() != '':
+        if name.get():
             self._write_config('name', name.get())
-            if window:
-                saved = tk.Label(window, text=f'{name.get()} has been saved successfully...')
-                saved.pack()
-                saved.after(400, saved.pack_forget)
+            self._popup_message('Name Saved', f'{name.get()} has been saved successfully...', 400, 200)
 
     
     def switch_player_turn(self):
@@ -784,12 +801,14 @@ class Whot(images):
         card_root.title("Ask for a card")
         card_root.resizable(False, False)
 
-        theme = self._config_file.get('theme')
-        if theme == 'Default':
-            button_theme = 'SystemButtonFace' if sys.platform == 'win32' else '#d9d9d9'
-            label_theme = 'SystemButtonText' if sys.platform == 'win32' else '#d9d9d9'
-        else:
-            button_theme, label_theme = theme, theme
+        theme = self._get_theme_conf()
+        label_theme, button_theme = theme, theme
+        # theme = self._config_file.get('theme')
+        # if theme == 'Default':
+        #     button_theme = 'SystemButtonFace' if sys.platform == 'win32' else '#d9d9d9'
+        #     label_theme = 'SystemButtonText' if sys.platform == 'win32' else '#d9d9d9'
+        # else:
+        #     button_theme, label_theme = theme, theme
 
         command = lambda card_name, toplev: self._p2_clicked_card(card_name, toplev)
 
@@ -992,9 +1011,15 @@ class Whot(images):
         root.geometry(geometry)
         return_value = None
 
-        host_var, port_var = tk.StringVar(value='127.0.0.1'), tk.IntVar(value=55555)
-        nickname_var = tk.StringVar(value='Genesis')
-        server_var = tk.StringVar(value='start server')
+        config = self._config_file['multiplayer']
+        config_names = ['host', 'port', 'nickname', 'server_choice']
+
+        host, port, nickname = config['host'], config['port'], config['nickname']
+        server_choice = config['server_choice']
+
+        host_var, port_var = tk.StringVar(value=host), tk.IntVar(value=port)
+        nickname_var = tk.StringVar(value=nickname)
+        server_var = tk.StringVar(value=server_choice)
 
         host_label = ttk.Label(root, text='Host:', font="-family {Segoe UI} -size 10 -weight bold")
         host_label.place(relx=0.077, rely=0.06, height=28, width=48)
@@ -1037,14 +1062,19 @@ class Whot(images):
         root.focus_set()
         root.grab_set()
         root.mainloop()
+
+        config['host'], config['port'], config['nickname'] = host, port, nickname
+        config['server_choice'] = server_choice
+        print(self._config_file)
+        self._write_config(plain_save=True)
         return return_value
     
-    def start_init_server_thread(self, host='127.0.0.1', port=55555):
+    def start_init_server_thread(self, host, port):
         print('server host and port -->', host, port)
         init_server_thread = threading.Thread(target=self.init_server, args=(host, port))
         init_server_thread.start()
     
-    def start_init_client_thread(self, host='127.0.0.1', port=55555):
+    def start_init_client_thread(self, host, port):
         print('client host and port -->', host, port)
         init_client_thread = threading.Thread(target=self.init_client, args=(host, port))
         init_client_thread.start()
@@ -1679,6 +1709,7 @@ class Whot(images):
         """See the Manual of the Game"""
         
         text = tk.Toplevel(self._root)
+        text.geometry(self.set_toplevel_to_center(420, 650))
         text.title("<Manual>")
         text.transient(self._root)
         text.resizable(False, False)
@@ -1687,7 +1718,7 @@ class Whot(images):
         text_lab.insert(1.0, manual)
         text.grid_rowconfigure(1, weight=1)
         text.grid_columnconfigure(0, weight=1)
-        text_lab.configure(state='disabled')
+        text_lab.configure(state='disabled', font=("Comic Sans Ms", 13))
         ttk.Button(text, text="Ok", command=text.destroy).grid()
         
     def _toggle_on_fullscreen(self, event=None):
