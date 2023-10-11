@@ -11,9 +11,8 @@ import Pmw
 import tkinter.messagebox as tmb
 import time, sys, threading, os
 import pickle, json
-from functools import partial
-from typing import Literal, Union
-
+from typing import Literal
+from icecream import ic
 
 class Whot(images):
     """Naija Whot Game in Grand Style - By Genesis Chrome"""
@@ -31,21 +30,26 @@ class Whot(images):
         self._config_file: dict[str, str | bool | dict[str, str | int]] = {}
         self.load_config_file()
         
-        read_name = self._config_file.get('name')
-        self._player2_frame = Pmw.ScrolledFrame(self._root, labelpos='s', usehullsize=1,
+        self._player2_frame = Pmw.ScrolledFrame(self._root, 
+                                                labelpos='s', 
+                                                usehullsize=1,
                                                 hull_width=100,
-                                                hull_height=225,
-                                                label_text=read_name.upper())
+                                                hull_height=225
+                                            )
         
-        self._played_cards_frame = tk.Frame(self._root, bg='aquamarine')
+        self._played_cards_frame = tk.Frame(self._root)
 
-        self._comp_frame = Pmw.ScrolledFrame(self._root, labelpos='n', usehullsize=1,
-                                             hull_width=100,
-                                             hull_height=225,
-                                             label_text='COMPUTER  =>')
+        self._comp_frame = Pmw.ScrolledFrame(self._root,
+                                            labelpos='n', 
+                                            usehullsize=1,
+                                            hull_width=100,
+                                            hull_height=225,
+                                            label_text='Computer'
+                                        )
 
-        self._comp_frame_int = self._comp_frame.interior()
-        self._p2_frame_int = self._player2_frame.interior()
+        self._comp_frame_int: tk.Frame = self._comp_frame.interior()
+        self._p2_frame_int: tk.Frame = self._player2_frame.interior()
+        ic(self._comp_frame_int, self._player2_frame)
 
         ###################################################################
         # Main Initialisations
@@ -132,34 +136,7 @@ class Whot(images):
         multiplayer_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label='Multiplayer', menu=multiplayer_menu)
         multiplayer_menu.add_command(label='Multiplayer', accelerator='Ctrl+Shift+M', compound='left', command=self.start_multiplayer_server_client)
-        ##############################################################################################################
-        # Theme Init
-        ##############################################################################################################
-        self._theme_var = tk.IntVar()
-        self._difficulty_var = tk.StringVar()
-        
-        self._themes_dict = {
-            'green1': 'green yellow',
-            'green2': '#000fff000',
-            'blue1': 'royal blue',
-            'blue2': 'dodger blue',
-            'aquamarine': 'Aquamarine',
-            'Default': '#d9d9d9',
-            'yellow': 'yellow',
-            'magenta': 'magenta',
-            'gold': 'gold',
-            'red': 'red',
-            'dark violet': 'dark violet',
-            'pink': 'pink',
-            'black': 'black'
-        }
-        self._theme_colors = ['yellow', 'blue1', 'blue2', 'red', 'aquamarine', 'green1', 'green2', 'magenta', 'gold',
-                              'dark violet', 'pink', 'black', 'Default']
-        
-        if not self._config_file.get('theme'):
-            color = self._theme_colors.index('Default')
-            self._theme_var.set(color)
-        
+    
         self._root.config(menu=menu_bar)
         ####################################################################################
         # Grids
@@ -185,8 +162,8 @@ class Whot(images):
         #################################################################################################################
         # Turn Indicators
         #################################################################################################################
-        self._p2_turn_indicator = tk.Label(self._root, text='player', font='Consolas 15 italic')
-        self._comp_turn_indicator = tk.Label(self._root, text='computer', font='Consolas 15 italic')
+        self._p2_turn_indicator = tk.Label(self._root, text='Player', font='Consolas 15 italic')
+        self._comp_turn_indicator = tk.Label(self._root, text='Computer', font='Consolas 15 italic')
         
         self._p2_turn_indicator.grid(row=4, column=2, sticky='e')
         self._comp_turn_indicator.grid(row=0, column=2, sticky='e')
@@ -203,22 +180,8 @@ class Whot(images):
         self._root.bind_all("<Escape>", self._toggle_off_fullscreen)
 
         self.__full_size = self._root.maxsize()
+        self.balloon_bindings()
 
-        ####################################################################################
-        # Balloon Bindings and Inits
-        ####################################################################################
-        market_balloon = Pmw.Balloon(self._root)
-        label_balloon = Pmw.Balloon(self._played_cards_frame)
-        p2_balloon = Pmw.Balloon(self._p2_frame_int)
-        comp_balloon = Pmw.Balloon(self._comp_frame_int)
-        for btn in self._depot_p2_btns:
-            p2_balloon.bind(btn, f'{self._config_file.get("name")}"s Cards')
-        for lab in self._depot_comp_labels:
-            comp_balloon.bind(lab, "Computer's Cards")
-        market_balloon.bind(self._market_btn, "Click To Go To Mart (Enter key does the same thing)")
-        label_balloon.bind(self._played_card, "Played Cards")
-        #####################################################################################
-        
         ####################################################################################
         # Who Plays First and Turn Indicator
         ####################################################################################
@@ -239,6 +202,34 @@ class Whot(images):
         self._comp_lab_grid_pos = 1000
         self._game_started = False
         self._show_setting_at_startup = tk.BooleanVar()
+
+        ##############################################################################################################
+        # Theme and Difficulty Var Init
+        ##############################################################################################################
+        self._theme_var = tk.StringVar()
+        self._difficulty_var = tk.StringVar()
+        
+        self._themes_dict = {
+            'Chartreuse': '#7FFF00',
+            'Bright Green': '#000fff000',
+            'Royal Blue': 'royal blue',
+            'Dodger Blue': 'dodger blue',
+            'Aquamarine': 'Aquamarine',
+            'Default': '#d9d9d9', #Light gray
+            'Yellow': 'yellow',
+            'Magenta': 'magenta',
+            'Gold': 'gold',
+            'Red': 'red',
+            'Dark Violet': 'dark violet',
+            'Pink': 'pink',
+            'Black': 'black',
+            'Orange': '#FFA500',
+            'Olive': '#808000',
+        }
+
+        config_theme = self._config_file.get('theme', 'Default')
+        self._theme_var.set(config_theme)
+        self.set_theme(config_theme)
         ####################################################################################
         # Update n Run
         ####################################################################################
@@ -248,10 +239,6 @@ class Whot(images):
         
         self._root.after(5800, self.compPlayEngine)
         self._root.after(1200, lambda: self.display_cards_animation([self._player2_btns[i] for i in range(5)]))
-        
-        theme = self._themes_dict.get(self._config_file.get('theme'))
-        self._theme_var.set(self._theme_colors.index(theme))
-        self._set_theme(theme)
         ####################################################################################
         # END
         ####################################################################################
@@ -293,7 +280,7 @@ class Whot(images):
             self._create_new_config_file()
             
     def _create_new_config_file(self):
-        """Creates a new config file if and when the original one has been deleted/Truncated"""
+        """Creates a new config file if the original one has been deleted/Truncated"""
         self._config_file = {
             'name': 'Genesis',
             'theme': 'Default',
@@ -314,7 +301,7 @@ class Whot(images):
     def _write_config(
             self, 
             data_type: str = None, 
-            data: Union[str, bool] = None, 
+            data: str | bool = None, 
             plain_save=False
         ):
         if not plain_save:
@@ -347,7 +334,7 @@ class Whot(images):
         root_tab.place(relx=0.0, rely=0.0, relheight=1.0, relwidth=1.0)
             
         self._choose_theme(theme_tab, root=top)
-        self._get_name(name_tab)
+        self.set_name(name_tab)
         self.choose_difficulty_mode(mode_tab)
         
         show_setting = ttk.Checkbutton(
@@ -420,7 +407,7 @@ class Whot(images):
 
         return f'{width}x{height}+{x}+{y}'
         
-    def _choose_theme(self, window: ttk.Frame, root: tk.Toplevel=None):
+    def _choose_theme(self, window: ttk.Frame, root: tk.Toplevel, event=None):
         """For choosing desired theme from the themes list"""  
 
         # theme_label = ttk.Label(window, text="Select Theme:",
@@ -428,47 +415,39 @@ class Whot(images):
         # theme_label.place(relx=0.279, rely=0.014, height=39, width=155)  
         
         theme_radbtns = []
-        radbtns_dict = {}
         num_per_row = 2
-        padx, pady = 19, 10
+        # padx, pady = 19, 10
+        padx, pady = 20, 8
 
-        for o, i in enumerate(self._theme_colors):
-            rbtn = ttk.Radiobutton(window, text=str(i).upper(), var=self._theme_var,
-                                   value=o, command=self._parse_theme)
+        for o, i in enumerate(self._themes_dict.keys()):
+            rbtn = ttk.Radiobutton(window, text=i.upper(), var=self._theme_var,
+                                   value=i, command=lambda val=i: self.set_theme(val))
             rbtn.grid(row=(o // num_per_row), column=o % num_per_row, padx=padx, pady=pady, sticky="w")
             theme_radbtns.append(rbtn)
             
-        for i in range(len(self._theme_colors)):
-            radbtns_dict[i] = theme_radbtns[i]
-
-        root.bind("<Down>", partial(self._scroll_theme, 'down'))
-        root.bind("<Up>", partial(self._scroll_theme, 'up'))
+        root.bind("<Down>", lambda event: self.scroll_theme('down'))
+        root.bind("<Up>", lambda event: self.scroll_theme('up'))
         root.focus_set()
         
-    def _scroll_theme(self, action: Literal['down', 'up'], event=None):
+    def scroll_theme(self, action: Literal['down', 'up']):
         value = self._theme_var.get()
+        theme_keys = list(self._themes_dict.keys())
+        current_index = theme_keys.index(value)
         
-        if action == 'down' and value <= len(self._theme_colors) - 2:
-            self._theme_var.set(value + 1)
-            self._parse_theme()
+        if action == 'down':
+            next_index = (current_index + 1) % len(theme_keys)
+            next_theme = theme_keys[next_index]
+            self._theme_var.set(next_theme)
+            self.set_theme(next_theme)
             
-        if action == 'up' and not value <= 0:
-            self._theme_var.set(value - 1)
-            self._parse_theme()
-    
-    def _parse_theme(self):
-        """Parse the chosen theme from self._theme_var and pass it to the themes method"""
-        theme_index = self._theme_var.get()
-        theme_color = self._theme_colors[theme_index]
-        self._set_theme(theme_color)
-            
-    def _get_theme_conf(self):
-        """Gets the theme configuration and updates the theme var"""
-        theme = self._config_file.get('theme')
-        return self._themes_dict.get(theme)
-        
-    def _set_theme(self, color: str):
+        if action == 'up':
+            prev_index = (current_index - 1) % len(theme_keys)
+            prev_theme = theme_keys[prev_index]
+            self._theme_var.set(prev_theme)
+            self.set_theme(prev_theme)
 
+        
+    def set_theme(self, color: str):
         if color not in self._themes_dict:
             self._write_config('theme', 'Default')
             return
@@ -485,6 +464,7 @@ class Whot(images):
             self._p2_cards_left.config(fg=theme_color)
             
             if color == 'Default':
+                print('\n@@@COLOR IS DEFAULT!!!')
                 self._comp_cards_left.config(fg='#000000')
                 self._p2_cards_left.config(fg='#000000')
             
@@ -492,7 +472,7 @@ class Whot(images):
         except tk.TclError as e:
             print(e)
 
-    def _popup_message(
+    def popup_message(
             self, 
             title: str, 
             text: str, 
@@ -520,33 +500,50 @@ class Whot(images):
         top.after(duration, top.destroy)
         
     
-    def _get_name(self, window: ttk.Frame):
+    def set_name(self, window: ttk.Frame):
         """Gets desired name from player"""
         theme = self._themes_dict.get(self._config_file.get('theme'))
-        entry_var = tk.StringVar()
-        name_label = ttk.Label(window, text='Enter Desired Name:',
-                 font="-family {Comic Sans MS} -size 16 -weight bold -slant italic")
+        former_name = self._config_file.get('name')
+        entry_var = tk.StringVar(value=former_name)
+        
+        name_label = ttk.Label(
+            window, 
+            text='Enter Desired Name:',
+            font="-family {Comic Sans MS} -size 16 -weight bold -slant italic"
+        )
         name_label.place(relx=0.202, rely=0.067, height=57, width=225)
         
-        name_entry = ttk.Entry(window, textvariable=entry_var)
-        name_entry.configure(font="-family {Comic Sans MS} -size 16 -weight bold -slant italic",
-                             foreground=theme)
+        name_entry = ttk.Entry(
+            window, 
+            textvariable=entry_var,
+            font="-family {Comic Sans MS} -size 16 -weight bold -slant italic",
+            foreground=theme, 
+            justify='center'
+        )
         name_entry.place(relx=0.173, rely=0.334, relheight=0.104, relwidth=0.653)
         
-        save_button = ttk.Button(window, text='Save', command=lambda: self._set_name(entry_var))
+        save_button = ttk.Button(
+            window, 
+            text='Save', 
+            command=lambda: self.save_name_cmd(entry_var)
+        )
         save_button.place(relx=0.347, rely=0.669, height=35, width=96)
-        ttk.Label(window, text='(Restart To Initiate Changes)').place(relx=0.289, rely=0.468, height=16, width=155)
-        name_entry.bind("<Return>", lambda: self._set_name(entry_var))
+        
+        # ttk.Label(
+        #     window, 
+        #     text='(Restart To Initiate Changes)'
+        # ).place(relx=0.289, rely=0.468, height=16, width=155)
+        
+        name_entry.bind("<Return>", lambda: self.save_name_cmd(entry_var))
 
-        former_name = self._config_file.get('name')
-        entry_var.set(former_name)
-        name_entry.focus_set()
             
-    def _set_name(self, name: tk.StringVar, event=None):
+    def save_name_cmd(self, name: tk.StringVar, event=None):
         """Sets (Registers) the desired name to the configuration file"""
         if name.get():
             self._write_config('name', name.get())
-            self._popup_message('Name Saved', f'{name.get()} has been saved successfully...', 400, 200)
+            self.popup_message('Name Saved', f'{name.get()} has been saved successfully...', 400, 200)
+            self.update_turn_indicator()
+            self.balloon_bindings()
 
     
     def switch_player_turn(self):
@@ -585,7 +582,7 @@ class Whot(images):
             self.__checkop_played = False
             self.__check2_played = True
 
-        self._update_turn_indicator()
+        self.update_turn_indicator()
 
     
     def get_player_turn(self, player: Literal['comp', 'p2', 'op']) -> bool:
@@ -603,7 +600,7 @@ class Whot(images):
             
         return False
                 
-    def _update_turn_indicator(self):
+    def update_turn_indicator(self):
         p2_turn = self.get_player_turn('p2')
         comp_turn = self.get_player_turn('comp')
         op_turn = self.get_player_turn('op')
@@ -618,10 +615,19 @@ class Whot(images):
 
         #since its op's turn, we'll use comp's widgets to display the turn indicator
         elif op_turn and not p2_turn:
-            text = self._onlineNickname if self._onlineNickname else 'OnlinePlayer'
             self._p2_turn_indicator.config(fg='red')
-            self._comp_turn_indicator.config(text=text, fg='#000fff000')
-            
+            self._comp_turn_indicator.config(fg='#000fff000')
+        
+        #Set names
+        p2_name = self._config_file.get('name').capitalize()
+        self._p2_turn_indicator.config(text=p2_name)
+        self._player2_frame["label_text"] = p2_name
+        if self._onlinePlayerActive:
+            op_name = self._onlineNickname if self._onlineNickname else 'OnlinePlayer'
+            op_name = op_name.capitalize()
+            self._comp_turn_indicator.config(text=op_name)
+            self._comp_frame["label_text"] = op_name
+
 
     def display_number_of_cards(self, player: Literal['computer', 'player2', 'onlinep']):
         """Display number of cards left/remaining for the player"""
@@ -642,6 +648,27 @@ class Whot(images):
             else:
                 text = 'Last Card...' if no_of_cards == 1 else f"Number of your cards : {no_of_cards}"
             self._comp_cards_left.config(text=text)
+    
+    def balloon_bindings(self):
+        """Balloon Bindings and Updates"""
+        market_balloon = Pmw.Balloon(self._root)
+        label_balloon = Pmw.Balloon(self._played_cards_frame)
+        p2_balloon = Pmw.Balloon(self._p2_frame_int)
+        comp_balloon = Pmw.Balloon(self._comp_frame_int)
+
+        for btn in self._depot_p2_btns:
+            p2_balloon.bind(btn, f"{self._config_file.get('name')}'s Cards")
+        
+        if not self._onlinePlayerActive:
+            for lab in self._depot_comp_labels:
+                comp_balloon.bind(lab, "Computer's Cards")
+        else:
+            op_name = self._onlineNickname if self._onlineNickname else 'OnlinePlayer'
+            for lab in self._depot_onlinep_labels:
+                comp_balloon.bind(lab, f"{op_name}'s Cards")
+
+        market_balloon.bind(self._market_btn, "Click To Go To Mart (Enter key does the same thing)")
+        label_balloon.bind(self._played_card, "Played Cards")
 
     
     def repopulate_cards(self, onlinePlayer=False):
@@ -664,7 +691,7 @@ class Whot(images):
         else:
             self._depot_onlinep_labels.append(tk.Label(self._comp_frame_int))
             self._onlinep_labels[-1] = self._depot_onlinep_labels[-1]
-        self._set_theme(self._config_file.get('theme')) # Sets the theme for the newly added widgets
+        self.set_theme(self._config_file.get('theme')) # Sets the theme for the newly added widgets
         
 
     def player2_play(
@@ -801,14 +828,8 @@ class Whot(images):
         card_root.title("Ask for a card")
         card_root.resizable(False, False)
 
-        theme = self._get_theme_conf()
+        theme = self._themes_dict.get(self._theme_var.get())
         label_theme, button_theme = theme, theme
-        # theme = self._config_file.get('theme')
-        # if theme == 'Default':
-        #     button_theme = 'SystemButtonFace' if sys.platform == 'win32' else '#d9d9d9'
-        #     label_theme = 'SystemButtonText' if sys.platform == 'win32' else '#d9d9d9'
-        # else:
-        #     button_theme, label_theme = theme, theme
 
         command = lambda card_name, toplev: self._p2_clicked_card(card_name, toplev)
 
@@ -885,8 +906,7 @@ class Whot(images):
             try:
                 [lab.grid_forget() for lab in self._depot_onlinep_labels]
             except AttributeError as e:
-                pass
-                # print(e)
+                ic(e)
             self._whot.InitOnlinePlayerCards()
         else:
             self._whot.InitComputerCards()
@@ -903,7 +923,7 @@ class Whot(images):
             player_turn = 'p2' if choice(('player2', 'onlinep')) == 'player2' else 'op'
         self.__current_player = player_turn
         self.set_player_turn(player_turn)
-        self._set_theme(self._config_file.get('theme'))
+        self.set_theme(self._config_file.get('theme'))
 
         return player_turn
 
@@ -935,7 +955,8 @@ class Whot(images):
                 self._onlinep_labels[i].config(image=self._misc_whot1)
                 self._label_reference[i].append(self._onlinep.cards()[i])
 
-            # Overwrite Computer Objects with OnlinePlayer
+            # Overwrite Computer Objects with OnlinePlayer 
+            #TODO: is this Necessary??
             self._computer = self._onlinep
             self._depot_comp_labels = self._depot_onlinep_labels
             self._computer_labels = self._onlinep_labels
@@ -950,13 +971,21 @@ class Whot(images):
                 self._label_reference[i].append(self._computer.cards()[i])
 
         self._p2_btn_grid_pos, self._comp_lab_grid_pos = 1000, 1000
-        self._played_card = tk.Label(self._played_cards_frame, image=self._whot.PlayedCards()[-1][0])
-        self._market_btn = tk.Button(self._root, image=self._misc_whot, command=self.p2_mart, state='disabled')
+        # Played_card grid happens in animate_cards
+        self._played_card = tk.Label(
+            self._played_cards_frame, 
+            image=self._whot.PlayedCards()[-1][0]
+        )
+        self._market_btn = tk.Button(
+            self._root, 
+            image=self._misc_whot, 
+            command=self.p2_mart, state='disabled'
+        )
         self._market_btn.grid(row=2, column=0, sticky='w')
 
     def start_multiplayer_server_client(self, event=None):
         if self._delay_multiplayer_for_animations:
-            self._popup_message(title='Please Wait', text='Please wait for animations to finish',
+            self.popup_message(title='Please Wait', text='Please wait for animations to finish',
                                 wraplength=240)
             return
         
@@ -966,7 +995,7 @@ class Whot(images):
             return
         host, port, nickname, server_choice = multiplayer
         self._server_choice = server_choice
-        self._onlineNickname = nickname
+        # self._onlineNickname = nickname
 
         if server_choice == 'start server':
             self.start_init_server_thread(host, port)
@@ -1002,6 +1031,7 @@ class Whot(images):
             self._onlinePlayerActive = False
             self._connectionFailed = False
             self.__restart(force=True)
+        self.balloon_bindings()
     
     def multiplayer_gui(self) -> tuple[str, int, str, str] | None:
         root = tk.Toplevel(self._root)
@@ -1012,14 +1042,10 @@ class Whot(images):
         return_value = None
 
         config = self._config_file['multiplayer']
-        config_names = ['host', 'port', 'nickname', 'server_choice']
 
-        host, port, nickname = config['host'], config['port'], config['nickname']
-        server_choice = config['server_choice']
-
-        host_var, port_var = tk.StringVar(value=host), tk.IntVar(value=port)
-        nickname_var = tk.StringVar(value=nickname)
-        server_var = tk.StringVar(value=server_choice)
+        host_var, port_var = tk.StringVar(value=config['host']), tk.IntVar(value=config['port'])
+        nickname_var = tk.StringVar(value=config['nickname'])
+        server_var = tk.StringVar(value=config['server_choice'])
 
         host_label = ttk.Label(root, text='Host:', font="-family {Segoe UI} -size 10 -weight bold")
         host_label.place(relx=0.077, rely=0.06, height=28, width=48)
@@ -1047,10 +1073,20 @@ class Whot(images):
             nonlocal return_value
             root.destroy()
             root.quit()
+
+            host, port = host_var.get(), port_var.get()
+            nickname, server_choice = nickname_var.get(), server_var.get()
+
+            config['host'] = host
+            config['port'] = port
+            config['nickname'] = nickname
+            config['server_choice'] = server_choice
+            ic(self._config_file)
+            self._write_config(plain_save=True)
             if exit_btn:
                 return_value = None
             else:
-                return_value = (host_var.get(), port_var.get(), nickname_var.get(), server_var.get())
+                return_value = (host, port, nickname, server_choice)
             
         connect_btn = ttk.Button(root, text="Ok", command=close_window)
         connect_btn.place(relx=0.35, rely=0.833, height=25, width=86)
@@ -1063,10 +1099,7 @@ class Whot(images):
         root.grab_set()
         root.mainloop()
 
-        config['host'], config['port'], config['nickname'] = host, port, nickname
-        config['server_choice'] = server_choice
-        print(self._config_file)
-        self._write_config(plain_save=True)
+        
         return return_value
     
     def start_init_server_thread(self, host, port):
@@ -1096,7 +1129,8 @@ class Whot(images):
 
     def init_client(self, host=None, port=None):
         try:
-            client = socketClient.Client(host, port, self._onlineNickname, True)
+            nickname = self._config_file['multiplayer']['nickname']
+            client = socketClient.Client(host, port, nickname, True)
         except ConnectionRefusedError as e:
             print(e)
             self._connectionFailed = True
@@ -1195,10 +1229,6 @@ class Whot(images):
         
         client_data = self._onlineClient.client_data
         client_data['mart'] = False # Reset
-        # if client_data['request']:
-        #     self._player2.check_requested = False
-        #     self._player2.request = ''
-        #     client_data['request'] = ''
         self.display_number_of_cards('onlinep')
         self.handle_onlinep_todos()
         
@@ -1217,14 +1247,14 @@ class Whot(images):
         
         if self._onlinep_todo['hold_on']:
             print('Continuing for P2 from OP')
-            # self._popup_message("Continue", "Continue", 400)
+            # self.popup_message("Continue", "Continue", 400)
             self._onlineClient.send_data('Continue', data_type='CONTINUE')
             self._onlinep_todo['hold_on'] =  False
             self.set_player_turn('p2')
 
         if self._onlinep_todo['suspension']:
             print('Continuing for P2 from OP')
-            # self._popup_message("Continue", "Continue", 400)
+            # self.popup_message("Continue", "Continue", 400)
             self._onlineClient.send_data('Continue', data_type='CONTINUE')
             self._onlinep_todo['suspension'] = False
             self.set_player_turn('p2')
@@ -1347,7 +1377,7 @@ class Whot(images):
         
             if powerup[0] == 2:
                 print('\nPICK TWO')
-                self._popup_message("Pick Two", "Pick two cards from the mart")
+                self.popup_message("Pick Two", "Pick two cards from the mart")
                 self._root.title(f'{self._title} - PICK TWO')
                 for btn in self._depot_p2_btns:
                     btn.config(state='disabled')
@@ -1387,7 +1417,7 @@ class Whot(images):
 
         if powerup[0] == 14:
             print(f'\nGENERAL MARKET - {player}')
-            self._popup_message("General Market", "General Market")
+            self.popup_message("General Market", "General Market")
             self._root.title(f'{self._title} - GENERAL MARKET')
             for i in self._depot_p2_btns:
                 i.config(state='disabled')
@@ -1423,7 +1453,7 @@ class Whot(images):
         
             if powerup[0] == 1:
                 print(f'\nHOLD ON - {player}')
-                self._popup_message("Hold On", "Hold On")
+                self.popup_message("Hold On", "Hold On")
                 self._root.title(f'{self._title} - HOLD ON')
                 powerup.insert(0, 0)
                 self._checkmate()
@@ -1461,7 +1491,7 @@ class Whot(images):
                 powerup = self._computer.comp_powerup_8
             if powerup[0] == 8:
                 print(f'\nSUSPENSION - {player}')
-                self._popup_message("Hold On", "Suspension")
+                self.popup_message("Hold On", "Suspension")
                 self._root.title(f'{self._title} - SUSPENSION')
 
                 powerup.insert(0, 0)
@@ -1479,7 +1509,7 @@ class Whot(images):
         client_data = self._onlineClient.client_data
         continue_ = client_data['continue']
         if continue_:
-            self._popup_message("Continue", "Continue", 400)
+            self.popup_message("Continue", "Continue", 400)
             client_data['continue'] = False
         
     ##################################################################################################
@@ -1620,7 +1650,7 @@ class Whot(images):
                 # Computer's continue has to be after it plays a non streak card
                 self.compPlayEngine()
 
-                self._root.after(250, lambda: self._popup_message("Continue", "Continue", 400))
+                self._root.after(250, lambda: self.popup_message("Continue", "Continue", 400))
                 self.set_player_turn('p2')
                 
         elif self._player2.check_requested:
