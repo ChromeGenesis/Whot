@@ -14,9 +14,6 @@ class Client:
         
         self.address = address
         self.port = port
-
-        if not nickname:
-            nickname = input("Choose your nickname: ")
         self.nickname = nickname
 
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -31,7 +28,8 @@ class Client:
             'nickname': '',
             'conn_nickname': '',
             'request': '',
-            'mart': False
+            'mart': False,
+            'continue': False
         }
 
         self.client_init_data = {
@@ -44,7 +42,7 @@ class Client:
             socket.timeout,
             ConnectionResetError,
             ConnectionAbortedError
-        )
+)
         self._input_exceptions = (
             KeyboardInterrupt,
             OSError,
@@ -53,6 +51,7 @@ class Client:
 
         self.send_nickname()
         threading.Thread(target=self.recieve).start()
+
     
     def send_nickname(self):
         try:
@@ -76,57 +75,46 @@ class Client:
                 self.client.close()
                 self._client_is_alive = False
                 break
+        else:
+            print('Were disconnected...')
     
     def process_data(self, data: bytes):
-        if data.startswith(b'{INIT_DATA}'):
-            data = data[len(b'{INIT_DATA}'):].decode('ascii')
-            data = json.loads(data)
-            for i in ['seed', 'player_turn', 'nickname']:
-                self.client_init_data[i] = data[i]
+        print('in process data, data recv -->', type(data), data)
+        data = data.decode('ascii')
+        
+        message_map = {
+        '{INIT_DATA}': lambda d: self.client_init_data.update(json.loads(d)),
+        '{CARD}': lambda d: self.client_data.__setitem__('card', tuple(json.loads(d))),
+        '{MART}': lambda _: self.client_data.__setitem__('mart', True),
+        '{REQUEST}': lambda d: self.client_data.__setitem__('request', d),
+        '{NICKNAME}': lambda d: self.client_data.__setitem__('conn_nickname', d),
+        '{CONTINUE}': lambda _: self.client_data.__setitem__('continue', True),
+    }
 
-        elif data.startswith(b'{CARD}'):
-            data = data[len(b'{CARD}'):]
-            pickled_data: tuple[str, int] = pickle.loads(data)
-            self.client_data['card'] = pickled_data
-        
-        elif data.startswith(b'{MART}'):
-            data = data[len(b'{MART}'):]
-            self.client_data['mart'] = True
-        
-        elif data.startswith(b'{REQUEST}'):
-            data = data[len(b'{REQUEST}'):].decode('ascii')
-            self.client_data['request'] = data
-        
-        elif data.startswith(b'{NICKNAME}'):
-            data = data[len(b'{NICKNAME}'):].decode('ascii')
-            self.client_data['conn_nickname'] = data
-
-        else:
-            data = data.decode('ascii')
-            print(f'recieved message in proc data: {data}')
-    
+        for prefix, action in message_map.items():
+            if data.startswith(prefix):
+                action(data[len(prefix):])
+                return
+            
     def send_data(
             self, 
             data: str | tuple, 
-            data_type: Literal['CARD', 'MART', 'REQUEST']
+            data_type: Literal['CARD', 'MART', 'REQUEST', 'NICKNAME', 'CONTINUE']
         ):
+        encoded_data = None
+
         if isinstance(data, str):
-            if data_type == 'INIT_DATA':
-                encoded_data = b'{INIT_DATA}' + data.encode('ascii')
-            elif data_type == 'MART':
-                encoded_data = b'{MART}' + data.encode('ascii')
-            elif data_type == 'REQUEST':
-                encoded_data = b'{REQUEST}' + data.encode('ascii')
-            elif data_type == 'NICKNAME':
-                encoded_data = b'{NICKNAME}' + data.encode('ascii')
+            if data_type in ['INIT_DATA', 'MART', 'REQUEST', 'NICKNAME', 'CONTINUE']:
+                encoded_data = f'{{{data_type}}}{data}'.encode('ascii')
             else:
                 encoded_data = data.encode('ascii')
 
         elif isinstance(data, tuple):
             if data_type == 'CARD':
-                encoded_data = b'{CARD}' + pickle.dumps(data)
+                encoded_data = ('{CARD}'+ json.dumps(data)).encode('ascii')
         
-        self.client.send(encoded_data)
+        self.client.send(encoded_data) if encoded_data else None
+        print('sent_data -->', encoded_data)
 
     
     def shutdown(self):
@@ -134,7 +122,6 @@ class Client:
         self.client.close()
 
         
-
 
 if __name__ == '__main__':
     client = Client('localhost', 55555)
