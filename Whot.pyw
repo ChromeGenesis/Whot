@@ -10,9 +10,12 @@ from random import choice
 import Pmw
 import tkinter.messagebox as tmb
 import time, sys, threading, os
-import pickle, json
+import pickle, json, inspect
 from typing import Literal
 from icecream import ic
+import logging
+logging.basicConfig(level=logging.DEBUG, filename='whot.log')
+ic.prefix = '[LOG]'
 
 class Whot(images):
     """Naija Whot Game in Grand Style - By Genesis Chrome"""
@@ -27,7 +30,7 @@ class Whot(images):
         self._root.protocol("WM_DELETE_WINDOW", self.__exit)
         super().__init__()
 
-        self._config_file: dict[str, str | bool | dict[str, str | int]] = {}
+        self._config: dict[str, str | bool | dict[str, str | int]] = {}
         self.load_config_file()
         
         self._player2_frame = Pmw.ScrolledFrame(self._root, 
@@ -108,14 +111,7 @@ class Whot(images):
         self._found_20 = []
         self._found_request = []
         
-        ####################################################################
-        # Request
-        #####################################################################
-        self._player2_request = None
-        #####################################################################
-
         self.initialize_card_graphics()
-        #####################################################################################
         
         #####################################################################################
         # Menu
@@ -227,15 +223,15 @@ class Whot(images):
             'Olive': '#808000',
         }
 
-        config_theme = self._config_file.get('theme', 'Default')
+        config_theme = self._config.get('theme', 'Default')
         self._theme_var.set(config_theme)
-        self.set_theme(config_theme)
+        self.set_theme()
         ####################################################################################
         # Update n Run
         ####################################################################################
-        if self._config_file.get('show_setting'):
+        if self._config.get('show_setting'):
             self.settings()
-        self._difficulty_var.set(self._config_file.get('mode'))
+        self._difficulty_var.set(self._config.get('mode'))
         
         self._root.after(5800, self.compPlayEngine)
         self._root.after(1200, lambda: self.display_cards_animation([self._player2_btns[i] for i in range(5)]))
@@ -272,16 +268,15 @@ class Whot(images):
             ))
 
     def load_config_file(self):
-        self._root.after(10_000, lambda: print(self._root.winfo_geometry()))
         try:
             with open('./config.pkl', 'rb') as config_file:
-                self._config_file = pickle.load(config_file)
+                self._config = pickle.load(config_file)
         except (FileNotFoundError, EOFError, pickle.UnpicklingError):
             self._create_new_config_file()
             
     def _create_new_config_file(self):
         """Creates a new config file if the original one has been deleted/Truncated"""
-        self._config_file = {
+        self._config = {
             'name': 'Genesis',
             'theme': 'Default',
             'mode': 'easy',
@@ -295,7 +290,7 @@ class Whot(images):
         }
 
         with open('./config.pkl', 'wb+') as config_file:
-            pickle.dump(self._config_file, config_file)
+            pickle.dump(self._config, config_file)
 
 
     def _write_config(
@@ -305,19 +300,17 @@ class Whot(images):
             plain_save=False
         ):
         if not plain_save:
-            self._config_file[data_type] = data
+            self._config[data_type] = data
         
         with open('./config.pkl', 'wb+') as config_loc:
-            pickle.dump(self._config_file, config_loc)
+            pickle.dump(self._config, config_loc)
 
         
     def settings(self, event=None):
         """Settings for whot game"""
         top = tk.Toplevel(self._root)
         top.transient(self._root)
-        ttk.Style().theme_use('clam')
-        top.title(f'{self._title} - Settings')
-        
+        top.title(f'{self._title} - Settings')        
         top.geometry(self.set_toplevel_to_center(height=350, width=350))
         top.resizable(False, False)
             
@@ -345,20 +338,18 @@ class Whot(images):
                 self._show_setting_at_startup.get()
             )
         )
-        self._show_setting_at_startup.set(self._config_file.get('show_setting'))
+        disable_difficulty_modes = lambda: (setattr(self, '_game_started', True)
+                                            , top.destroy(), top.grab_release())
+
+        self._show_setting_at_startup.set(self._config.get('show_setting'))
         show_setting.place(relx=0.029, rely=0.923, relwidth=0.440, relheight=0.0, height=31)
-        ok_btn = ttk.Button(top, text='Ok', command=lambda: self.game_started(top))
+        ok_btn = ttk.Button(top, text='Ok', command=disable_difficulty_modes)
         ok_btn.place(relx=0.657, rely=0.923, height=25, width=96)
             
         top.focus_set()
-        top.protocol('WM_DELETE_WINDOW', lambda: self.game_started(top))
+        top.protocol('WM_DELETE_WINDOW', disable_difficulty_modes)
         top.grab_set()
 
-    
-    def game_started(self, window: tk.Frame):
-        self._game_started = True
-        window.grab_release()
-        window.destroy()
     
     def choose_difficulty_mode(self, window: tk.Frame):
         """To choose the mode of the game, whether easy or hard"""
@@ -400,12 +391,27 @@ class Whot(images):
                 i.configure(state='disabled')  
 
     def set_toplevel_to_center(self, height: int, width: int):
+        self._root.update()
         root_width = self._root.winfo_width()
         root_height = self._root.winfo_height()
         x = self._root.winfo_x() + (root_width - width) // 2
         y = self._root.winfo_y() + (root_height - height) // 2
 
         return f'{width}x{height}+{x}+{y}'
+
+    def get_actual_theme(self, for_text=False) -> str:
+        """
+        Get the theme color used by the application.
+
+        Args:
+            for_text (bool): Whether the theme is for text or not.
+            will return `black` if theme is `Default` and `for_text` is True.
+        """
+        theme = self._theme_var.get()
+        if for_text and theme == 'Default':
+            return 'black' #'#000000'
+        return self._themes_dict[theme]
+    
         
     def _choose_theme(self, window: ttk.Frame, root: tk.Toplevel, event=None):
         """For choosing desired theme from the themes list"""  
@@ -421,7 +427,7 @@ class Whot(images):
 
         for o, i in enumerate(self._themes_dict.keys()):
             rbtn = ttk.Radiobutton(window, text=i.upper(), var=self._theme_var,
-                                   value=i, command=lambda val=i: self.set_theme(val))
+                                   value=i, command=self.set_theme)
             rbtn.grid(row=(o // num_per_row), column=o % num_per_row, padx=padx, pady=pady, sticky="w")
             theme_radbtns.append(rbtn)
             
@@ -438,21 +444,23 @@ class Whot(images):
             next_index = (current_index + 1) % len(theme_keys)
             next_theme = theme_keys[next_index]
             self._theme_var.set(next_theme)
-            self.set_theme(next_theme)
+            self.set_theme()
             
         if action == 'up':
             prev_index = (current_index - 1) % len(theme_keys)
             prev_theme = theme_keys[prev_index]
             self._theme_var.set(prev_theme)
-            self.set_theme(prev_theme)
+            self.set_theme()
 
         
-    def set_theme(self, color: str):
-        if color not in self._themes_dict:
+    def set_theme(self):
+        color = self._theme_var.get()
+
+        if color not in self._themes_dict: 
             self._write_config('theme', 'Default')
             return
         
-        theme_color = self._themes_dict.get(color)
+        theme_color = self.get_actual_theme()
         
         try:
             self._root.option_add('*foreground', theme_color)
@@ -463,10 +471,9 @@ class Whot(images):
             self._comp_cards_left.config(fg=theme_color)
             self._p2_cards_left.config(fg=theme_color)
             
-            if color == 'Default':
-                print('\n@@@COLOR IS DEFAULT!!!')
-                self._comp_cards_left.config(fg='#000000')
-                self._p2_cards_left.config(fg='#000000')
+            theme_color = self.get_actual_theme(for_text=True)
+            self._comp_cards_left.config(fg=theme_color)
+            self._p2_cards_left.config(fg=theme_color)
             
             self._write_config('theme', color)
         except tk.TclError as e:
@@ -487,8 +494,7 @@ class Whot(images):
         top.transient(self._root)
         top.title(title.upper())
         
-        theme = self._config_file.get('theme')
-        theme = '#000000' if theme == 'Default' else theme
+        theme = self.get_actual_theme(for_text=True)
             
         label = tk.Label(top, text=text, foreground=theme, font='Consolas 13 bold',
                 padx=20, pady=20, wraplength=wraplength)
@@ -502,8 +508,8 @@ class Whot(images):
     
     def set_name(self, window: ttk.Frame):
         """Gets desired name from player"""
-        theme = self._themes_dict.get(self._config_file.get('theme'))
-        former_name = self._config_file.get('name')
+        theme = self.get_actual_theme(for_text=True)
+        former_name = self._config.get('name')
         entry_var = tk.StringVar(value=former_name)
         
         name_label = ttk.Label(
@@ -533,11 +539,8 @@ class Whot(images):
         #     window, 
         #     text='(Restart To Initiate Changes)'
         # ).place(relx=0.289, rely=0.468, height=16, width=155)
-        
-        name_entry.bind("<Return>", lambda: self.save_name_cmd(entry_var))
-
             
-    def save_name_cmd(self, name: tk.StringVar, event=None):
+    def save_name_cmd(self, name: tk.StringVar):
         """Sets (Registers) the desired name to the configuration file"""
         if name.get():
             self._write_config('name', name.get())
@@ -619,7 +622,7 @@ class Whot(images):
             self._comp_turn_indicator.config(fg='#000fff000')
         
         #Set names
-        p2_name = self._config_file.get('name').capitalize()
+        p2_name = self._config.get('name').capitalize()
         self._p2_turn_indicator.config(text=p2_name)
         self._player2_frame["label_text"] = p2_name
         if self._onlinePlayerActive:
@@ -657,7 +660,7 @@ class Whot(images):
         comp_balloon = Pmw.Balloon(self._comp_frame_int)
 
         for btn in self._depot_p2_btns:
-            p2_balloon.bind(btn, f"{self._config_file.get('name')}'s Cards")
+            p2_balloon.bind(btn, f"{self._config.get('name')}'s Cards")
         
         if not self._onlinePlayerActive:
             for lab in self._depot_comp_labels:
@@ -691,7 +694,7 @@ class Whot(images):
         else:
             self._depot_onlinep_labels.append(tk.Label(self._comp_frame_int))
             self._onlinep_labels[-1] = self._depot_onlinep_labels[-1]
-        self.set_theme(self._config_file.get('theme')) # Sets the theme for the newly added widgets
+        self.set_theme() # Sets the theme for the newly added widgets
         
 
     def player2_play(
@@ -712,7 +715,6 @@ class Whot(images):
                     self._played_card.configure(image=card[0][0])
 
                     if not self._onlinePlayerActive:
-                        print('OP not active')
                         card_display_btn.after(500, self.compPlayEngine)
                     else:
                         self._onlineClient.send_data(card[0][1], 'CARD')
@@ -863,9 +865,11 @@ class Whot(images):
             window.grab_release()
         if card:
             player = 'comp' if not self._onlinePlayerActive else 'op'
-            self._player2_request = card
             self.set_player_turn(player)
             if not self._onlinePlayerActive:
+                self._whot.requests['player2'] = card
+                #TODO
+                self._player2.requested_card = card
                 self._root.after(500, self.computer_response_to_card_20)
             else:
                 self._onlineClient.send_data(card, data_type='REQUEST')
@@ -923,12 +927,19 @@ class Whot(images):
             player_turn = 'p2' if choice(('player2', 'onlinep')) == 'player2' else 'op'
         self.__current_player = player_turn
         self.set_player_turn(player_turn)
-        self.set_theme(self._config_file.get('theme'))
+        self.set_theme()
 
         return player_turn
 
 
-    def initialize_card_graphics(self, onlinePlayer=False):
+    def initialize_card_graphics(self, onlinePlayer=False) -> None:
+        """
+        Initializes the graphics for the card game, specifically the buttons and labels for Player 2 and Computer players.
+        
+        Parameters:
+            onlinePlayer (bool): A flag indicating whether the game is being played with an online player
+            (Multiplayer).
+        """
         # Butnrefs and Labrefs
         self._btn_reference: list[list[tuple[tk.PhotoImage, tuple[str, int]]]]
         self._btn_reference = [[] for _ in range(30)]
@@ -1041,7 +1052,7 @@ class Whot(images):
         root.geometry(geometry)
         return_value = None
 
-        config = self._config_file['multiplayer']
+        config = self._config['multiplayer']
 
         host_var, port_var = tk.StringVar(value=config['host']), tk.IntVar(value=config['port'])
         nickname_var = tk.StringVar(value=config['nickname'])
@@ -1081,7 +1092,7 @@ class Whot(images):
             config['port'] = port
             config['nickname'] = nickname
             config['server_choice'] = server_choice
-            ic(self._config_file)
+            ic(self._config)
             self._write_config(plain_save=True)
             if exit_btn:
                 return_value = None
@@ -1129,7 +1140,7 @@ class Whot(images):
 
     def init_client(self, host=None, port=None):
         try:
-            nickname = self._config_file['multiplayer']['nickname']
+            nickname = self._config['multiplayer']['nickname']
             client = socketClient.Client(host, port, nickname, True)
         except ConnectionRefusedError as e:
             print(e)
@@ -1268,6 +1279,9 @@ class Whot(images):
         print('joined or started -->', self._server_choice, '\n')
 
     def onlinep_request_card_with_20(self, request: str):
+        #TODO: Make it such that the requested card is the only accepted card to be
+        #TODO: played after the request (by one recursion) then market if card unavailable
+        
         client_data = self._onlineClient.client_data
 
         if len(self._onlinep.cards()) == 0:
@@ -1275,10 +1289,9 @@ class Whot(images):
             return
 
         self.set_player_turn('p2')
-        self._player2.check_requested = True        
 
         print('in req with card 20, request -->', request)
-        self._player2.request = request
+        self._whot.requests['onlineplayer'] = request
         tmb.showinfo("Request", f"I NEED {request.upper()}")
         self._root.title(f'{self._title} - Request {request.upper()}')
         client_data['request'] = ''
@@ -1296,10 +1309,6 @@ class Whot(images):
             if self._onlinep.play(card):
                 self._played_card.configure(image=card[0])
                 card_display_label.grid_forget()
-                
-                if card[1][0] == self._player2.request: # Whether OP has played p2's request
-                    self._player2.check_requested = False
-                    self._player2.request = ''   
 
                 self._onlineClient.client_data['card'] = None
                     
@@ -1401,7 +1410,7 @@ class Whot(images):
             return
         
         elif player == 'op':
-            print(f'\nGENERAL MARKET - {player}')
+            logging.debug(f'GENERAL MARKET - {player}')
             powerup = self._player2.p2_powerup_14
             if powerup[0] == 14:
                 self.set_player_turn('op')
@@ -1416,7 +1425,7 @@ class Whot(images):
                 powerup = self._computer.comp_powerup_14
 
         if powerup[0] == 14:
-            print(f'\nGENERAL MARKET - {player}')
+            logging.debug(f'GENERAL MARKET - {player}')
             self.popup_message("General Market", "General Market")
             self._root.title(f'{self._title} - GENERAL MARKET')
             for i in self._depot_p2_btns:
@@ -1437,7 +1446,7 @@ class Whot(images):
             return
         
         elif player == 'op':
-            print(f'\nHOLD ON - {player}')
+            logging.debug(f'HOLD ON - {player}')
             powerup = self._player2.p2_powerup_1
             if powerup[0] == 1:
                 self.set_player_turn('p2')
@@ -1452,7 +1461,7 @@ class Whot(images):
                 powerup = self._computer.comp_powerup_1
         
             if powerup[0] == 1:
-                print(f'\nHOLD ON - {player}')
+                logging.debug(f'HOLD ON - {player}')
                 self.popup_message("Hold On", "Hold On")
                 self._root.title(f'{self._title} - HOLD ON')
                 powerup.insert(0, 0)
@@ -1476,7 +1485,7 @@ class Whot(images):
             return
         
         elif player == 'op':
-            print(f'\nSUSPENSION - {player}')
+            logging.debug(f'SUSPENSION - {player}')
             powerup = self._player2.p2_powerup_8
             if powerup[0] == 8:
                 self.set_player_turn('p2')
@@ -1490,7 +1499,7 @@ class Whot(images):
             else:
                 powerup = self._computer.comp_powerup_8
             if powerup[0] == 8:
-                print(f'\nSUSPENSION - {player}')
+                logging.debug(f'SUSPENSION - {player}')
                 self.popup_message("Hold On", "Suspension")
                 self._root.title(f'{self._title} - SUSPENSION')
 
@@ -1514,7 +1523,6 @@ class Whot(images):
         
     ##################################################################################################
 
-
     def comp_play(
             self, 
             card: tuple[tk.PhotoImage, tuple[str, int]], 
@@ -1522,66 +1530,90 @@ class Whot(images):
         ):
         """Plays any cards that are valid, from CompPlayEngine"""
 
-        if self.get_player_turn('comp') and not self.__check_checkmate:
-            if self._computer.play(card):
-                self._played_card.configure(image=card[0])
-                card_display_label.grid_forget()
-                
-                self.computer_request_card_with_20(card) 
-                if card[1][0] == self._player2.request: # Whether comp has played p2's request
-                    self._player2.check_requested = False
-                    self._player2.request = ''   
+        try:
+            if self.get_player_turn('comp') and not self.__check_checkmate:
+                if self._computer.play(card):
+                    self._played_card.configure(image=card[0])
+
+                    caller_frame = inspect.currentframe().f_back
+                    caller_info = inspect.getframeinfo(caller_frame)
+                    # caller_info.function
+                    grid_info = True if card_display_label.grid_info() else False
+                    ic(grid_info, caller_info.function)
+                    logging.debug(f'grid_info: {grid_info}, caller_method: {caller_info.function}')
+                    card_display_label.grid_forget()
                     
-                self.display_number_of_cards('computer')
-                self.pick_two('p2')
-                self.go_gen_mart('p2')
-                self.hold_on('p2')
-                self.suspension('p2')
+                    self.computer_request_card_with_20(card)                     
+                    self.display_number_of_cards('computer')
+                    self.pick_two('p2')
+                    self.go_gen_mart('p2')
+                    self.hold_on('p2')
+                    self.suspension('p2')
 
-                self.set_player_turn('p2')
-        
-                self._checkmate()
+                    self.set_player_turn('p2')
             
-            else: # Rare Happening
-                raise Main.WhotException('Computer Played Invalid Card')
-
+                    self._checkmate()
+                
+                else: # Rare Happening
+                    raise Main.WhotException('Computer Played Invalid Card')
+        #TODO
+        except Main.WhotException as e:
+            tmb.showerror('Computer Error', e)
 
     def compPlayEngine(self, event=None):
-        print('Engine triggered')
+        # logging.debug('Engine triggered')
         if not self.get_player_turn('comp') and not self.__check_checkmate:
             return
 
-        containers = [self._found_request, self._found_20, self._found_num, self._found_str]
+        # if self._whot.requests['player2']: #TODO: Redundant???
+        #     self.computer_response_to_card_20()
+
+        if self._computer.requested_card_idx is not None:
+            idx = self._computer.requested_card_idx
+            card = self._label_reference[idx]
+            ic(idx, card, self._label_reference.index(card))
+            logging.debug(f'[Engine] {idx}, {card}, {self._label_reference.index(card)}')
+
+            last_played_card = self._whot.PlayedCards()[-1]
+            if (card[0][1][0] == last_played_card[1][0] or
+                card[0][1][1] == last_played_card[1][1] or
+                last_played_card[1][1] == 20):
+                self.comp_play(
+                    card[0], 
+                    self._computer_labels[idx]
+                )
+                self._label_reference.pop(self._label_reference.index(card))
+                self._computer.requested_card_idx = None
+                return
+            #card idx now useless as a counter powerup was played by p2
+            self._computer.requested_card_idx = None
+
+        containers = [self._found_20, self._found_num, self._found_str]
         lab_ref_idx = None
 
         for idx, card in enumerate(self._label_reference):
             if not card:
                 continue
             
-            if self._player2.check_requested and card[0][1][0] == self._player2.request:
+            if card[0][1][1] == 20:
                 self.parse_and_remove_comp_cards(containers[0], card, idx)
                 lab_ref_idx = idx
                 break
 
-            elif card[0][1][1] == 20:
+            if not self._found_20 and card[0][1][1] == self._whot.PlayedCards()[-1][1][1]:
                 self.parse_and_remove_comp_cards(containers[1], card, idx)
                 lab_ref_idx = idx
                 break
 
-            if not self._found_20 and card[0][1][1] == self._whot.PlayedCards()[-1][1][1]:
+            if not self._found_num and not self._found_20 and card[0][1][0] == self._whot.PlayedCards()[-1][1][0]:
                 self.parse_and_remove_comp_cards(containers[2], card, idx)
                 lab_ref_idx = idx
                 break
-
-            if not self._found_num and not self._found_20 and card[0][1][0] == self._whot.PlayedCards()[-1][1][0]:
-                self.parse_and_remove_comp_cards(containers[3], card, idx)
-                lab_ref_idx = idx
-                break
         
-        found_valid_card = []
-        # Must not change the order of containers
+        # found_valid_card = []
+        #! Must not change the order of containers
         found_valid_card = next((container for container in containers if container), None)
-        
+
         if found_valid_card:
             self.comp_engine_play_valid_card(
                 containers.index(found_valid_card), 
@@ -1589,10 +1621,12 @@ class Whot(images):
                 lab_ref_idx
             )
         else:
+            # ic('applying difficulty (Mart)...')
             self.apply_difficulty()
         
         for container in containers:
             container.clear()
+
 
     def parse_and_remove_comp_cards(
             self, 
@@ -1612,11 +1646,14 @@ class Whot(images):
             card: tuple[tk.PhotoImage, tuple[str, int]],
             lab_ref_idx: int
         ):
+        # ic.configureOutput(prefix='[Play Valid Card]: ')
 
-        if found_index == 2: # found num
+        ic('[play valid card]:', found_index, card)
+        logging.debug(f'[Comp Play Valid Card]: {found_index}, {card[1]}, {lab_ref_idx}')
+        if found_index == 1: # found num
             if card[1][1] == self._whot.PlayedCards()[-1][1][1]:
                 self.comp_play(card, self._computer_labels.get(lab_ref_idx))
-        elif found_index == 3: # found str
+        elif found_index == 2: # found str
             if card[1][0] == self._whot.PlayedCards()[-1][1][0]:
                 self.comp_play(card, self._computer_labels.get(lab_ref_idx))
         else:
@@ -1628,18 +1665,22 @@ class Whot(images):
         (Specifically Streaks For When Computer Encounters An 8 0r 1 Card - The Hold On And Suspension Cards)
         """
         
-        if not self.__check_checkmate and not self._player2.check_requested:
+        if not self.__check_checkmate and not self._whot.requests['player2']:
             found_card_streak_no = []
             for idx, i in enumerate(self._label_reference):
                 if i and i[0][1][1] == card_streak_no:
                     found_card_streak_no = [idx, i]
                     self._label_reference.insert(idx, [])
                     self._label_reference.pop(self._label_reference.index(i))
-                    print("\nfound a card streak -->", found_card_streak_no, "\n")
+                    # print("\nfound a card streak -->", found_card_streak_no, "\n")
+                    logging.debug(f'found a card streak --> {found_card_streak_no}')
+                    ic(found_card_streak_no)
                     break
 
             self.set_player_turn('comp')
-    
+
+            #! Issue might be stemming from here
+            #! might be supplying labels that arent displayed and we there grid forgetting
             if found_card_streak_no:
                 self.comp_play(
                     found_card_streak_no[1][0], 
@@ -1653,7 +1694,7 @@ class Whot(images):
                 self._root.after(250, lambda: self.popup_message("Continue", "Continue", 400))
                 self.set_player_turn('p2')
                 
-        elif self._player2.check_requested:
+        elif self._whot.requests['player2']:
             self._root.after(500, self.compPlayEngine)
 
     
@@ -1669,6 +1710,8 @@ class Whot(images):
                         self._computer.gomart()
 
                     self._label_reference[o].append(self._computer.cards()[-1])
+                    ic('computer picked card [Mart]:', self._computer.cards()[-1])
+
                     new_lab = self._computer_labels.get(o)
 
                     new_lab.config(image=self._misc_whot1)
@@ -1685,54 +1728,62 @@ class Whot(images):
     def computer_request_card_with_20(self, card: tuple[tk.PhotoImage, tuple[str, int]]):
         """Finds a viable (powerup) card to request from player2 after computer plays the Whot 20 card"""
         
-        if card[1][1] == 20 and len(self._computer.cards()) != 0:
-            found_viable_card = ''
+        if card[1][1] != 20 or len(self._computer.cards()) == 0:
+            return
+        
+        found_viable_card, idx = '', None
 
-            for i in self._label_reference:
-                if i:
-                    if i[0][1][1] in [1, 2, 8, 14]:
-                        found_viable_card = i[0][1][0]
-                        break
-                    if i[0][1][0] != 'whot':
-                        found_viable_card = i[0][1][0]
-            
-            if found_viable_card:
-                print(f'found_viable_card: {found_viable_card} for comp, setting self._player2.check_requested to True...')
-                self._player2.check_requested = True
-                
-                tmb.showinfo("Request", f"I NEED {found_viable_card.upper()}")
-                self._player2.request = found_viable_card
-                if found_viable_card != 'whot':
-                    self._root.title(f'{self._title} - Request {found_viable_card.upper()}')
-                else:
-                    self._root.title(f'{self._title} - Request {found_viable_card}')
-            else:
-                tmb.showinfo("Request", f"I NEED {found_viable_card.upper()}")
-                self._player2.request = found_viable_card
-                self._root.title(f'{self._title} - Request {found_viable_card.upper()}')
+        for idx, i in enumerate(self._label_reference):
+            if not i:
+                continue
+            if i[0][1][1] in [1, 2, 8, 14]:
+                found_viable_card = i[0][1][0]
+                break
+        
+        if not found_viable_card:
+            f = next(((idx, i) for idx, i in enumerate(self._label_reference) if i and i[0][1][0] != 'whot'))
+            idx, found_viable_card = f[0], f[1][0][1][0]
+
+        #there'll always be a viable card, else tis checkmate!
+        # print(f'found_viable_card for comp, setting self._whot.requests["computer"] to {found_viable_card}...')
+        logging.debug(f'found_viable_card for comp, setting self._whot.requests["computer"] to {found_viable_card}...')
+        tmb.showinfo("Request", f"I NEED {found_viable_card.upper()}")
+        self._whot.requests['computer'] = found_viable_card
+        self._root.title(f'{self._title} - Request {found_viable_card.upper()}')
+
+        self._computer.requested_card_idx = idx
+        ic(self._computer.requested_card_idx)
+        logging.debug(f'computer requested card idx: {self._computer.requested_card_idx}')
+        logging.debug(f'computer request and requests --> {self._whot.requests}')
 
 
     def computer_response_to_card_20(self):
         """Generates the computer's appropriate response to the requested
         whot card 20 by player2"""
 
-        card = self._player2_request
-        if self.get_player_turn('comp') and not self.__check_checkmate:
-            for o, i in enumerate(self._label_reference):
-                if i and i[0][1][0] == card:
-                    self._found_20.append([o, i])
-                    self._label_reference.insert(o, [])
-                    self._label_reference.pop(self._label_reference.index(i))
-                    break
+        if not self.get_player_turn('comp') or self.__check_checkmate:
+            return
         
-            if self._found_20:
-                i = self._found_20[0]
-                self.comp_play(i[1][0], self._computer_labels.get(i[0]))
-                self._found_20.clear()
+        card = self._whot.requests['player2']
+        for o, i in enumerate(self._label_reference):
+            if i and i[0][1][0] == card:
+                self._found_request.append([o, i])
+                self._label_reference.insert(o, [])
+                self._label_reference.pop(self._label_reference.index(i))
+                break
+    
+        if self._found_request:
+            ic('Computer playing p2 request rn...')
+            logging.debug('Computer is playing p2 request rn...')
+            i = self._found_request[0]
+            self.comp_play(i[1][0], self._computer_labels.get(i[0])) #* The play function should clear p2 request
+            self._found_request.clear()
+            return
 
-            else:
-                print("don't have the card going to mart")
-                self.apply_difficulty()
+        else:
+            ic('couldnt grant p2 request, going to mart...')
+            logging.debug("computer doesnt have the card going to mart")
+            self.apply_difficulty() #* The mart func will also clear p2 request
 
 
     def Manual(self, event=None):
