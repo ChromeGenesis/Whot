@@ -3,14 +3,24 @@ import random
 from GameImages import images
 import tkinter as tk
 from typing import Literal
-import os
+import logging
+logging.basicConfig(filename='whot.log', level=logging.DEBUG)
+
 
 class Whot(images):
     'A Game of cards usually involving two players by default, see manual for more info.'
-    def __init__(self, shuffle_seed=None):
+    
+    # Cards: list[tuple[tk.PhotoImage, tuple[str, int]]] = []
+    requests: dict[str, str | None] = {
+            'player2': None,
+            'computer': None,
+            'onlineplayer': None
+        }
+    def __init__(self, shuffle_seed: int=None):
         if shuffle_seed:
             random.seed(shuffle_seed)
-        
+            print('\n$$$$$ Seed implemented in main -->', shuffle_seed, '$$$$$\n')
+
         super().__init__()
         
     def InitDepot(self):
@@ -95,6 +105,8 @@ class Computer(Whot):
         self.comp_powerup_14=[0]
         self.comp_powerup_20=[0]
 
+        self.requested_card_idx: int = None
+
     def play(self, playcard: tuple[tk.PhotoImage, tuple[str, int]]):
         'Computer plays a valid card in their cardstack'
 
@@ -105,8 +117,10 @@ class Computer(Whot):
             if (playcard[1][0] == last_played_card[1][0] or
                 playcard[1][1] == last_played_card[1][1] or
                 playcard[1][1] == 20 or last_played_card[1][1] == 20):
+
+                self.handle_requests()
                 
-                print(playcard[1], "Has been played")
+                logging.debug(f'[Computer played]; {playcard[1]} length; {len(self.cards())}')
                 
                 powerup_cards = {
                     1: self.comp_powerup_1,
@@ -128,6 +142,9 @@ class Computer(Whot):
         else:
             raise WhotException("Error: Playcard is not in your cardstack!")
 
+    def handle_requests(self):
+        if self.requests['computer']:
+            self.requests['computer'] = None
 
     def cards(self) -> list[tuple[tk.PhotoImage, tuple[str, int]]]:
         "returns Computer's (computer) cards"
@@ -138,12 +155,16 @@ class Computer(Whot):
         self.LoopDepot()
         self.cards().append(Whot.Cards[11])
         Whot.Cards.remove(Whot.Cards[11])
+        self.handle_requests()
+        logging.debug(f'[Computer] went to market: {self.cards()[-1][1]}')
 
     def gogenmart(self):
         "General market"
         self.LoopDepot()
         self.cards().append(Whot.Cards[12])
         Whot.Cards.remove(Whot.Cards[12])
+        self.handle_requests()
+        logging.debug(f'[Computer] went to general market: {self.cards()[-1][1]}')
         
 
 class Player2(Whot):
@@ -156,8 +177,7 @@ class Player2(Whot):
         self.p2_powerup_14=[0]
         self.p2_powerup_20=[0]
         
-        self.check_requested = False
-        self.request: str = ''
+        self.requested_card: str = None #TODO: May be redundant in the future
         
     def play(self, playcard: tuple[tk.PhotoImage, tuple[str, int]]):
         'Player2 Plays a valid card in his/her cardstack'
@@ -171,14 +191,9 @@ class Player2(Whot):
                 playcard[1][1] == last_played_card[1][1] or
                 playcard[1][1] == 20 or last_played_card[1][1] == 20):
                 
-                if self.check_requested:
-                    if playcard[1][0] != self.request and playcard[1][1] != 20:
-                        raise WhotException(f"Error your opponent requested for {self.request} and not {playcard[1][0]}!")
-                    else:
-                        self.check_requested = False
-                        self.request = ''
+                self.handle_requests(playcard)
 
-                print(playcard[1], "Has been played")
+                logging.debug(f'[Player2 played]; {playcard[1]} length; {len(self.cards())}')
 
                 powerup_cards = {
                     1: self.p2_powerup_1,
@@ -199,6 +214,25 @@ class Player2(Whot):
                 raise WhotException("Error: Invalid Move!")
         else:
             raise WhotException("Error: Playcard is not in your cardstack!")
+    
+    def handle_requests(self, playcard: tuple[tk.PhotoImage, tuple[str, int]] = None):
+        if playcard:
+            if self.requests['onlineplayer'] or self.requests['computer']:
+                request = self.requests['onlineplayer'] or self.requests['computer']
+                if playcard[1][0] != request and playcard[1][1] != 20:
+                    raise WhotException(f"Error your opponent requested for {request} and not {playcard[1][0]}!")
+                else:
+                    self.requests['onlineplayer'] = None
+                    self.requests['computer'] = None
+
+            if self.requested_card and playcard[1][0] != self.requested_card:
+                raise WhotException(f"Nigga Play The Card You Just Requested Hint: {self.requested_card}!")
+            else:
+                self.requested_card = None
+        else:
+            self.requests['onlineplayer'] = None
+            self.requests['computer'] = None
+
 
     def cards(self) -> list[tuple[tk.PhotoImage, tuple[str, int]]]:
         "returns Player2's cards"
@@ -209,12 +243,18 @@ class Player2(Whot):
         self.LoopDepot()
         self.cards().append(Whot.Cards[13])
         Whot.Cards.remove(Whot.Cards[13])
+        #! incase the player goes to mart from absence of the requested card
+        self.handle_requests()
+        logging.debug(f'[Player2] went to market: {self.cards()[-1][1]}')
 
     def gogenmart(self):
         "Gen market"
         self.LoopDepot()
         self.cards().append(Whot.Cards[14])
         Whot.Cards.remove(Whot.Cards[14])
+        #! incase the player goes to mart from absence of the requested card
+        self.handle_requests()
+        logging.debug(f'[Player2] went to general market: {self.cards()[-1][1]}')
 
 
 class OnlinePlayer(Whot):
@@ -227,14 +267,10 @@ class OnlinePlayer(Whot):
         self.op_powerup_14=[0]
         self.op_powerup_20=[0]
 
-        self.check_requested = False
-        self.request: str = ''
-
     def play(self, playcard: tuple[tk.PhotoImage, tuple[str, int]]):
         'OnlinePlayer Plays a valid card in his/her cardstack'
 
         self.LoopDepot()
-        # print(f'\n@@@in main: OP play, card is {playcard} \nand cardstack is {self.cards()}')
         if playcard in self.cards():
             last_played_card = self.PlayedCards()[-1]
 
@@ -242,14 +278,14 @@ class OnlinePlayer(Whot):
                 playcard[1][1] == last_played_card[1][1] or
                 playcard[1][1] == 20 or last_played_card[1][1] == 20):
                 
-                if self.check_requested:
-                    if playcard[1][0] != self.request and playcard[1][1] != 20:
-                        raise WhotException(f"Error your opponent requested for {self.request} and not {playcard[1][0]}!")
+                if self.requests['player2']:
+                    request = self.requests['player2']
+                    if playcard[1][0] != request and playcard[1][1] != 20:
+                        raise WhotException(f"Error your opponent requested for {request} and not {playcard[1][0]}!")
                     else:
-                        self.check_requested = False
-                        self.request = ''
+                        self.requests['player2'] = None
 
-                print(playcard[1], "Has been played")
+                logging.debug(f'[OnlinePlayer played]; {playcard[1]} length: {len(self.cards())}')
 
                 powerup_cards = {
                     1: self.op_powerup_1,
