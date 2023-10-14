@@ -52,7 +52,6 @@ class Whot(images):
 
         self._comp_frame_int: tk.Frame = self._comp_frame.interior()
         self._p2_frame_int: tk.Frame = self._player2_frame.interior()
-        ic(self._comp_frame_int, self._player2_frame)
 
         ###################################################################
         # Main Initialisations
@@ -673,21 +672,54 @@ class Whot(images):
         market_balloon.bind(self._market_btn, "Click To Go To Mart (Enter key does the same thing)")
         label_balloon.bind(self._played_card, "Played Cards")
 
-    
     def repopulate_cards(self, onlinePlayer=False):
+        """Repopulates by appending one more container (list) to the Button | Label references and
+         one more Button | Label to the depots after the reference containers have all been filled up"""
+        
+        used_p2_containers = [ref for ref in self._btn_reference if ref]
+        used_comp_containers = [ref for ref in self._label_reference if ref]
+
+        p2_full = len(used_p2_containers) == len(self._btn_reference)
+        comp_full = len(used_comp_containers) == len(self._label_reference)
+
+
+        if not p2_full or not comp_full: #Empty containers present: all good
+            return
+
+        # No empty containers: have to add some        
+        self._btn_reference.append([])
+        self._label_reference.append([])
+        
+        self._depot_p2_btns.append(tk.Button(self._p2_frame_int))
+        self._player2_btns[max(self._player2_btns)+1] = self._depot_p2_btns[-1]
+        # ic(len(self._depot_p2_btns), len(self._player2_btns))
+
+        if not onlinePlayer:
+            self._depot_comp_labels.append(tk.Label(self._comp_frame_int))
+            self._computer_labels[max(self._computer_labels)+1] = self._depot_comp_labels[-1]
+        else:
+            self._depot_onlinep_labels.append(tk.Label(self._comp_frame_int))
+            self._onlinep_labels[max(self._onlinep_labels)+1] = self._depot_onlinep_labels[-1]
+        self.set_theme() # Sets the theme for the newly added widgets
+        ic(len(self._player2_btns), len(self._computer_labels))
+    
+    def repopulate_cards_(self, onlinePlayer=False):
         """Repopulates by appending one more container (list) to the Button | Label references and
          one more Button | Label to the depots after the reference containers have all been filled up"""
         
         used_container = [ref for ref in self._btn_reference if ref]
 
-        if len(used_container) != len(self._btn_reference):
+        if len(used_container) != len(self._btn_reference): #Empty containers present
             return
-        
+
+        # No empty containers, have to add some        
         self._btn_reference.append([])
         self._label_reference.append([])
         
         self._depot_p2_btns.append(tk.Button(self._p2_frame_int))
         self._player2_btns[-1] = self._depot_p2_btns[-1]
+        ic(len(self._depot_p2_btns), len(self._player2_btns))
+
         if not onlinePlayer:
             self._depot_comp_labels.append(tk.Label(self._comp_frame_int))
             self._computer_labels[-1] = self._depot_comp_labels[-1]
@@ -704,8 +736,10 @@ class Whot(images):
             event=None
         ):
         """For player2 (actual player) to play his or her valid card"""
-
-        if self.get_player_turn('p2') and not self.__check_checkmate:
+        if self.__check_checkmate:
+            return
+        
+        if self.get_player_turn('p2'):
             try:
                 if self._player2.play(card[0]):
                     player = 'op' if self._onlinePlayerActive else 'comp'
@@ -764,8 +798,8 @@ class Whot(images):
                 self._p2_btn_grid_pos -= 1
                 if self._onlinePlayerActive:
                     self._onlineClient.send_data('MARKET', 'MART')
-                else:
-                    new_btn.after(500, self.compPlayEngine)
+                # else:
+                #     new_btn.after(500, self.compPlayEngine)
                 break
         
         self.display_number_of_cards('player2')
@@ -776,8 +810,10 @@ class Whot(images):
             self._root.title(f'{self._title} - PICK TWO')
         elif self._check2 == 0 or not self._check2:
             self._root.title(self._title)
+            self._root.after(500, self.compPlayEngine)
         else:
             self._root.title(self._title)
+            self._root.after(500, self.compPlayEngine)
 
     def _check_p2(self, player='comp', event=None):
         """Checks whether player2 clicked the mart button twice (in other words, checks whether player2 has
@@ -1523,39 +1559,42 @@ class Whot(images):
         
     ##################################################################################################
 
-    def comp_play(
+    def computer_play(
             self, 
             card: tuple[tk.PhotoImage, tuple[str, int]], 
             card_display_label: tk.Label
         ):
         """Plays any cards that are valid, from CompPlayEngine"""
-
+        if not self.get_player_turn('comp') or self.__check_checkmate:
+            return
+        
         try:
-            if self.get_player_turn('comp') and not self.__check_checkmate:
-                if self._computer.play(card):
-                    self._played_card.configure(image=card[0])
+            if self._computer.play(card):
+                self._played_card.configure(image=card[0])
 
-                    caller_frame = inspect.currentframe().f_back
-                    caller_info = inspect.getframeinfo(caller_frame)
-                    # caller_info.function
-                    grid_info = True if card_display_label.grid_info() else False
-                    ic(grid_info, caller_info.function)
-                    logging.debug(f'grid_info: {grid_info}, caller_method: {caller_info.function}')
-                    card_display_label.grid_forget()
-                    
-                    self.computer_request_card_with_20(card)                     
-                    self.display_number_of_cards('computer')
-                    self.pick_two('p2')
-                    self.go_gen_mart('p2')
-                    self.hold_on('p2')
-                    self.suspension('p2')
-
-                    self.set_player_turn('p2')
-            
-                    self._checkmate()
+                caller_frame = inspect.currentframe().f_back
+                caller_info = inspect.getframeinfo(caller_frame)
+                grid_info = True if card_display_label.grid_info() else False
+                ic(grid_info, caller_info.function)
+                logging.debug(f'grid_info: {grid_info}, caller_method: {caller_info.function}')
+                if not grid_info:
+                    tmb.showwarning("Warning", "Card played isn't even grided yet!\nAttempting next available label")
+                    card_display_label = next((i for i in self._computer_labels.values() if i.grid_info()))
+                card_display_label.grid_forget()
                 
-                else: # Rare Happening
-                    raise Main.WhotException('Computer Played Invalid Card')
+                self.computer_request_card_with_20(card)                     
+                self.display_number_of_cards('computer')
+                self.pick_two('p2')
+                self.go_gen_mart('p2')
+                self.hold_on('p2')
+                self.suspension('p2')
+
+                self.set_player_turn('p2')
+        
+                self._checkmate()
+            
+            else: # Rare Happening
+                raise Main.WhotException('Computer Played Invalid Card')
         #TODO
         except Main.WhotException as e:
             tmb.showerror('Computer Error', e)
@@ -1572,15 +1611,18 @@ class Whot(images):
             idx = self._computer.requested_card_idx
             card = self._label_reference[idx]
             ic(idx, card, self._label_reference.index(card))
-            logging.debug(f'[Engine] {idx}, {card}, {self._label_reference.index(card)}')
-
+            logging.debug(f'[requested_card_idx]: idx: {idx}, card: {card}, label_ref_index(card): {self._label_reference.index(card)}')
+            if not card: #comp has somehow played that card (maybe p2 counter requested with whot20)
+                self._computer.requested_card_idx = None
+                return
+            
             last_played_card = self._whot.PlayedCards()[-1]
             if (card[0][1][0] == last_played_card[1][0] or
                 card[0][1][1] == last_played_card[1][1] or
                 last_played_card[1][1] == 20):
-                self.comp_play(
+                self.computer_play(
                     card[0], 
-                    self._computer_labels[idx]
+                    self._computer_labels.get(idx)
                 )
                 self._label_reference.pop(self._label_reference.index(card))
                 self._computer.requested_card_idx = None
@@ -1613,6 +1655,7 @@ class Whot(images):
         # found_valid_card = []
         #! Must not change the order of containers
         found_valid_card = next((container for container in containers if container), None)
+        ic(containers)
 
         if found_valid_card:
             self.comp_engine_play_valid_card(
@@ -1634,7 +1677,7 @@ class Whot(images):
             card: list[tuple[tk.PhotoImage, tuple[str, int]]],
             index: int):
         """Remove the computer card and add an empty list (card) to the same index in ``self._label_reference``"""
-        
+        ic('[parse comp cards]:', index)
         found_card_container.append(card)
         self._label_reference.insert(index, [])
         self._label_reference.pop(self._label_reference.index(card))
@@ -1648,16 +1691,16 @@ class Whot(images):
         ):
         # ic.configureOutput(prefix='[Play Valid Card]: ')
 
-        ic('[play valid card]:', found_index, card)
+        ic('[play valid card]:', found_index, card, lab_ref_idx, self._computer_labels.get(lab_ref_idx).grid_info())
         logging.debug(f'[Comp Play Valid Card]: {found_index}, {card[1]}, {lab_ref_idx}')
         if found_index == 1: # found num
             if card[1][1] == self._whot.PlayedCards()[-1][1][1]:
-                self.comp_play(card, self._computer_labels.get(lab_ref_idx))
+                self.computer_play(card, self._computer_labels.get(lab_ref_idx))
         elif found_index == 2: # found str
             if card[1][0] == self._whot.PlayedCards()[-1][1][0]:
-                self.comp_play(card, self._computer_labels.get(lab_ref_idx))
+                self.computer_play(card, self._computer_labels.get(lab_ref_idx))
         else:
-            self.comp_play(card, self._computer_labels.get(lab_ref_idx))
+            self.computer_play(card, self._computer_labels.get(lab_ref_idx))
     
 
     def comp_card_streak(self, card_streak_no: int):
@@ -1682,7 +1725,7 @@ class Whot(images):
             #! Issue might be stemming from here
             #! might be supplying labels that arent displayed and we there grid forgetting
             if found_card_streak_no:
-                self.comp_play(
+                self.computer_play(
                     found_card_streak_no[1][0], 
                     self._computer_labels.get(found_card_streak_no[0])
                 )
@@ -1703,26 +1746,29 @@ class Whot(images):
         The 'gone_to_mart_before' argument checks whether the computer has already gone to mart before if the
         `self._computer.gomart` has beeen called before"""
 
-        if self.get_player_turn('comp') and not self.__check_checkmate:
-            for o, i in enumerate(self._label_reference):
-                if not i:
-                    if not gone_to_mart_before:
-                        self._computer.gomart()
+        if not self.get_player_turn('comp') or self.__check_checkmate:
+            return
+        
+        for o, i in enumerate(self._label_reference):
+            if not i:
+                if not gone_to_mart_before:
+                    self._computer.gomart()
 
-                    self._label_reference[o].append(self._computer.cards()[-1])
-                    ic('computer picked card [Mart]:', self._computer.cards()[-1])
+                self._label_reference[o].append(self._computer.cards()[-1])
 
-                    new_lab = self._computer_labels.get(o)
+                new_lab = self._computer_labels.get(o)
+                if new_lab.grid_info():
+                    tmb.showwarning('Warning', 'Card from mart is already grided!')
+                    new_lab = next((i for i in self._computer_labels.values() if not i.grid_info()))
+                new_lab.config(image=self._misc_whot1)
+                new_lab.grid(row=0, column=self._comp_lab_grid_pos, padx=6, pady=6)
+                self._comp_lab_grid_pos -=1
+                break
 
-                    new_lab.config(image=self._misc_whot1)
-                    new_lab.grid(row=0, column=self._comp_lab_grid_pos, padx=6, pady=6)
-                    self._comp_lab_grid_pos -=1
-                    break
-
-            self.display_number_of_cards('computer')
-            self.set_player_turn('p2')    
-            self.repopulate_cards()
-            self._root.title(self._title)
+        self.display_number_of_cards('computer')
+        self.set_player_turn('p2')    
+        self.repopulate_cards()
+        self._root.title(self._title)
 
 
     def computer_request_card_with_20(self, card: tuple[tk.PhotoImage, tuple[str, int]]):
@@ -1776,7 +1822,7 @@ class Whot(images):
             ic('Computer playing p2 request rn...')
             logging.debug('Computer is playing p2 request rn...')
             i = self._found_request[0]
-            self.comp_play(i[1][0], self._computer_labels.get(i[0])) #* The play function should clear p2 request
+            self.computer_play(i[1][0], self._computer_labels.get(i[0])) #* The play function should clear p2 request
             self._found_request.clear()
             return
 
