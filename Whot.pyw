@@ -10,12 +10,12 @@ from random import choice
 import Pmw
 import tkinter.messagebox as tmb
 import time, sys, threading, os
-import pickle, json, inspect
+import pickle, json
 from typing import Literal
 from icecream import ic
 import logging
 logging.basicConfig(level=logging.DEBUG, filename='whot.log')
-ic.prefix = '[LOG]'
+ic.prefix = '\n[LOG]'
 
 class Whot(images):
     """Naija Whot Game in Grand Style - By Genesis Chrome"""
@@ -110,6 +110,7 @@ class Whot(images):
         self._found_20 = []
         self._found_request = []
         
+        self.COMP_PLAY_DELAY = 600
         self.initialize_card_graphics()
         
         #####################################################################################
@@ -166,14 +167,7 @@ class Whot(images):
         ##################################################################################
         # Binding's
         ##################################################################################
-        self._root.bind_all("<Control-m>", self.Manual)
-        self._root.bind_all("<Control-r>", self.__restart)
-        self._root.bind_all("<Control-M>", self.start_multiplayer_server_client)
-        self._root.bind("<Control-s>", self.settings)
-        self._root.bind("<Return>", self.p2_mart)
-        self._root.bind_all("<F11>", self._toggle_on_fullscreen)
-        self._root.bind_all("<Escape>", self._toggle_off_fullscreen)
-
+        self.root_bindings()
         self.__full_size = self._root.maxsize()
         self.balloon_bindings()
 
@@ -238,13 +232,42 @@ class Whot(images):
         # END
         ####################################################################################
 
+    def balloon_bindings(self):
+        """Balloon Bindings and Updates"""
+        market_balloon = Pmw.Balloon(self._root)
+        label_balloon = Pmw.Balloon(self._played_cards_frame)
+        p2_balloon = Pmw.Balloon(self._p2_frame_int)
+        comp_balloon = Pmw.Balloon(self._comp_frame_int)
+
+        for btn in self._depot_p2_btns:
+            p2_balloon.bind(btn, f"{self._config.get('name')}'s Cards")
+        
+        if not self._onlinePlayerActive:
+            for lab in self._depot_comp_labels:
+                comp_balloon.bind(lab, "Computer's Cards")
+        else:
+            op_name = self._onlineNickname if self._onlineNickname else 'OnlinePlayer'
+            for lab in self._depot_onlinep_labels:
+                comp_balloon.bind(lab, f"{op_name}'s Cards")
+
+        market_balloon.bind(self._market_btn, "Click To Go To Mart (Enter key does the same thing)")
+        label_balloon.bind(self._played_card, "Played Cards")
+    
+    def root_bindings(self):
+        self._root.bind_all("<Control-m>", self.Manual)
+        self._root.bind_all("<Control-r>", self.__restart)
+        self._root.bind_all("<Control-M>", self.start_multiplayer_server_client)
+        self._root.bind("<Control-s>", self.settings)
+        self._root.bind("<Return>", self.p2_mart)
+        self._root.bind_all("<F11>", self._toggle_on_fullscreen)
+        self._root.bind_all("<Escape>", self._toggle_off_fullscreen)
+
         
     def display_cards_animation(self, p2_btns: list[tk.Button]):
 
         self._root.after(3700, lambda: setattr(self, '_delay_multiplayer_for_animations', False))
 
-        for card in p2_btns:
-            card.config(state='disabled')
+        [card.config(state='disabled') for card in p2_btns]
         
         btn_duration = 50
         for btn, column in zip(p2_btns, range(1001, 1006)):
@@ -386,8 +409,7 @@ class Whot(images):
         window.focus_set()
         
         if self._game_started:
-            for i in [hard_radbtn, medium_radbtn, easy_radbtn]:
-                i.configure(state='disabled')  
+            [rbtn.configure(state='disabled') for rbtn in [hard_radbtn, medium_radbtn, easy_radbtn]]
 
     def set_toplevel_to_center(self, height: int, width: int):
         self._root.update()
@@ -487,7 +509,7 @@ class Whot(images):
         ) -> None:
         """Displays popup message containing information for 1 sec approx,
           (or the `duration` arg specification)"""
-        top = tk.Toplevel(self._root)
+        top = tk.Toplevel(self._root, background='white')
         top.grab_set()
         top.focus_set()
         top.transient(self._root)
@@ -651,26 +673,7 @@ class Whot(images):
                 text = 'Last Card...' if no_of_cards == 1 else f"Number of your cards : {no_of_cards}"
             self._comp_cards_left.config(text=text)
     
-    def balloon_bindings(self):
-        """Balloon Bindings and Updates"""
-        market_balloon = Pmw.Balloon(self._root)
-        label_balloon = Pmw.Balloon(self._played_cards_frame)
-        p2_balloon = Pmw.Balloon(self._p2_frame_int)
-        comp_balloon = Pmw.Balloon(self._comp_frame_int)
-
-        for btn in self._depot_p2_btns:
-            p2_balloon.bind(btn, f"{self._config.get('name')}'s Cards")
-        
-        if not self._onlinePlayerActive:
-            for lab in self._depot_comp_labels:
-                comp_balloon.bind(lab, "Computer's Cards")
-        else:
-            op_name = self._onlineNickname if self._onlineNickname else 'OnlinePlayer'
-            for lab in self._depot_onlinep_labels:
-                comp_balloon.bind(lab, f"{op_name}'s Cards")
-
-        market_balloon.bind(self._market_btn, "Click To Go To Mart (Enter key does the same thing)")
-        label_balloon.bind(self._played_card, "Played Cards")
+    
 
     def repopulate_cards(self, onlinePlayer=False):
         """Repopulates by appending one more container (list) to the Button | Label references and
@@ -749,7 +752,7 @@ class Whot(images):
                     self._played_card.configure(image=card[0][0])
 
                     if not self._onlinePlayerActive:
-                        card_display_btn.after(500, self.compPlayEngine)
+                        card_display_btn.after(self.COMP_PLAY_DELAY, self.compPlayEngine)
                     else:
                         self._onlineClient.send_data(card[0][1], 'CARD')
 
@@ -810,10 +813,10 @@ class Whot(images):
             self._root.title(f'{self._title} - PICK TWO')
         elif self._check2 == 0 or not self._check2:
             self._root.title(self._title)
-            self._root.after(500, self.compPlayEngine)
+            self._root.after(self.COMP_PLAY_DELAY, self.compPlayEngine)
         else:
             self._root.title(self._title)
-            self._root.after(500, self.compPlayEngine)
+            self._root.after(self.COMP_PLAY_DELAY, self.compPlayEngine)
 
     def _check_p2(self, player='comp', event=None):
         """Checks whether player2 clicked the mart button twice (in other words, checks whether player2 has
@@ -827,9 +830,7 @@ class Whot(images):
 
         if self._check2 == 2: # Done picking two cards
             self.set_player_turn(player)
-
-            for btn in self._depot_p2_btns:
-                btn.config(state='normal')
+            [btn.config(state='normal') for btn in self._depot_p2_btns]
             self._check2 = 0
             self._market_btn.config(command=self.p2_mart)
             self._root.bind("<Return>", self.p2_mart)
@@ -843,9 +844,7 @@ class Whot(images):
         self.p2_mart(1)
         if self._check1 == 1:
             self.set_player_turn(player)
-
-            for btn in self._depot_p2_btns:
-                btn.config(state='normal')
+            [btn.config(state='normal') for btn in self._depot_p2_btns]
             self._check1 = 0
             self._market_btn.config(command=self.p2_mart)
             self._root.bind("<Return>", self.p2_mart)
@@ -895,8 +894,7 @@ class Whot(images):
         """Registers player2's Desired card and calls player1 (computer or OP) to respond to the request"""
         if window:
             window.destroy()
-            for i in self._depot_p2_btns:
-                i.config(state='normal')
+            [btn.config(state='normal') for btn in self._depot_p2_btns]
             self._market_btn.config(state='normal')
             window.grab_release()
         if card:
@@ -1079,6 +1077,7 @@ class Whot(images):
             self._connectionFailed = False
             self.__restart(force=True)
         self.balloon_bindings()
+        self.root_bindings()
     
     def multiplayer_gui(self) -> tuple[str, int, str, str] | None:
         root = tk.Toplevel(self._root)
@@ -1396,111 +1395,117 @@ class Whot(images):
         """Makes Player Pick two cards from the mart"""
 
         if player == 'comp':
-            if self._player2.p2_powerup_2[0] == 2:
-                for _ in range(2):
-                    self.apply_difficulty()
-                    self.set_player_turn('comp')
+            if self._player2.powerup_cards[2]:
+                self.set_player_turn('comp')
 
-                self._player2.p2_powerup_2.insert(0, 0)
+                def comp_pick_two_animation(count: int):
+                    if count < 2:
+                        ic(count)
+                        ic(self.get_player_turn('p2'), self.get_player_turn('comp'))
+                        self.set_player_turn('comp')
+                        self.apply_difficulty()
+                        self._root.after(self.COMP_PLAY_DELAY, comp_pick_two_animation, count + 1)
+                
+                comp_pick_two_animation(0)
+                # for _ in range(2):
+                #     self.apply_difficulty()
+                #     self.set_player_turn('comp')
+
+                self._player2.powerup_cards[2] = False
                 self.set_player_turn('p2')
             return
         
         elif player == 'op': # OP
-            powerup = self._player2.p2_powerup_2
-            if powerup[0] == 2:
+            if self._player2.powerup_cards[2]:
                 self.set_player_turn('op')
                 self._onlinep_todo['pick_two'] = 2
-                powerup.insert(0, 0)
+                self._player2.powerup_cards[2] = False
                 return
         
         elif player == 'p2':
             if self._onlinePlayerActive:
-                powerup = self._onlinep.op_powerup_2
+                powerup = self._onlinep.powerup_cards
             else:
-                powerup = self._computer.comp_powerup_2
+                powerup = self._computer.powerup_cards 
         
         
-            if powerup[0] == 2:
+            if powerup[2]:
                 print('\nPICK TWO')
                 self.popup_message("Pick Two", "Pick two cards from the mart")
                 self._root.title(f'{self._title} - PICK TWO')
-                for btn in self._depot_p2_btns:
-                    btn.config(state='disabled')
+                [btn.config(state='disabled') for btn in self._depot_p2_btns]
                 self._market_btn.config(command=self._check_p2)
                 self._root.unbind("<Return>")
                 self._root.bind("<Return>", self._check_p2)
-                powerup.insert(0, 0)
+                powerup[2] = False
     
     def go_gen_mart(self, player: Literal['p2', 'comp', 'op']):
         """Makes Player go to general market"""
 
         if player == 'comp':
             if self.get_player_turn('comp'):
-                if self._player2.p2_powerup_14[0] == 14:
+                if self._player2.powerup_cards[14]:
                     print("Computer Going to gen mart")
 
                     self.apply_difficulty()
             
-                    self._player2.p2_powerup_14.insert(0, 0)
+                    self._player2.powerup_cards[14] = False
                     self.set_player_turn('p2')
             return
         
         elif player == 'op':
             logging.debug(f'GENERAL MARKET - {player}')
-            powerup = self._player2.p2_powerup_14
-            if powerup[0] == 14:
+            if self._player2.powerup_cards[14]:
                 self.set_player_turn('op')
                 self._onlinep_todo['general_market'] = 1
-                powerup.insert(0, 0)
+                self._player2.powerup_cards[14] = False
                 return
 
         elif player == 'p2':
             if self._onlinePlayerActive:
-                powerup = self._onlinep.op_powerup_14
+                powerup = self._onlinep.powerup_cards
             else:
-                powerup = self._computer.comp_powerup_14
+                powerup = self._computer.powerup_cards
 
-        if powerup[0] == 14:
+        if powerup[14]:
             logging.debug(f'GENERAL MARKET - {player}')
             self.popup_message("General Market", "General Market")
             self._root.title(f'{self._title} - GENERAL MARKET')
-            for i in self._depot_p2_btns:
-                i.config(state='disabled')
+            [btn.config(state='disabled') for btn in self._depot_p2_btns] #Disable p2 buttons
             self._market_btn.config(command=self._check_p1)
             self._root.unbind("<Return>")
             self._root.bind("<Return>", self._check_p1)
-            powerup.insert(0, 0)
+            powerup[14] = False
 
     def hold_on(self, player: Literal['p2', 'comp', 'op']):
         """Makes Player to hold on until the other player plays another card or goes to the mart,
         after playing a card with number 1 in it"""
 
         if player == 'comp':
-            if self._player2.p2_powerup_1[0] == 1:
+            if self._player2.powerup_cards[1]:
                 self.set_player_turn('p2')
-                self._player2.p2_powerup_1.insert(0, 0)
+                self._player2.powerup_cards[1] = False
             return
         
         elif player == 'op':
             logging.debug(f'HOLD ON - {player}')
-            powerup = self._player2.p2_powerup_1
-            if powerup[0] == 1:
+            if self._player2.powerup_cards[1]:
                 self.set_player_turn('p2')
                 self._onlinep_todo['hold_on'] = True
-                powerup.insert(0, 0)
+                self._player2.powerup_cards[1] = False
                 return
 
         elif player == 'p2':
             if self._onlinePlayerActive:
-                powerup = self._onlinep.op_powerup_1
+                powerup = self._onlinep.powerup_cards
             else:
-                powerup = self._computer.comp_powerup_1
+                powerup = self._computer.powerup_cards
         
-            if powerup[0] == 1:
+            if powerup[1]:
                 logging.debug(f'HOLD ON - {player}')
                 self.popup_message("Hold On", "Hold On")
                 self._root.title(f'{self._title} - HOLD ON')
-                powerup.insert(0, 0)
+                powerup[1] = False
                 self._checkmate()
                 if not self._onlinePlayerActive:
                     self._root.after(500, lambda: self.comp_card_streak(1))
@@ -1515,31 +1520,30 @@ class Whot(images):
           another card or go to mart"""
         
         if player =='comp':
-            if self._player2.p2_powerup_8[0] == 8:
+            if self._player2.powerup_cards[8]:
                 self.set_player_turn('p2')
-                self._player2.p2_powerup_8.insert(0, 0)
+                self._player2.powerup_cards[8] = False
             return
         
         elif player == 'op':
             logging.debug(f'SUSPENSION - {player}')
-            powerup = self._player2.p2_powerup_8
-            if powerup[0] == 8:
+            if self._player2.powerup_cards[8]:
                 self.set_player_turn('p2')
                 self._onlinep_todo['suspension'] = True
-                powerup.insert(0, 0)
+                self._player2.powerup_cards[8] = False
                 return
 
         elif player == 'p2':
             if self._onlinePlayerActive:
-                powerup = self._onlinep.op_powerup_8
+                powerup = self._onlinep.powerup_cards
             else:
-                powerup = self._computer.comp_powerup_8
-            if powerup[0] == 8:
+                powerup = self._computer.powerup_cards
+            if powerup[8]:
                 logging.debug(f'SUSPENSION - {player}')
                 self.popup_message("Hold On", "Suspension")
                 self._root.title(f'{self._title} - SUSPENSION')
 
-                powerup.insert(0, 0)
+                powerup[8] = False
                 self._checkmate()
 
                 if not self._onlinePlayerActive:
@@ -1562,7 +1566,6 @@ class Whot(images):
     def computer_play(
             self, 
             card: tuple[tk.PhotoImage, tuple[str, int]], 
-            card_display_label: tk.Label
         ):
         """Plays any cards that are valid, from CompPlayEngine"""
         if not self.get_player_turn('comp') or self.__check_checkmate:
@@ -1572,14 +1575,7 @@ class Whot(images):
             if self._computer.play(card):
                 self._played_card.configure(image=card[0])
 
-                caller_frame = inspect.currentframe().f_back
-                caller_info = inspect.getframeinfo(caller_frame)
-                grid_info = True if card_display_label.grid_info() else False
-                ic(grid_info, caller_info.function)
-                logging.debug(f'grid_info: {grid_info}, caller_method: {caller_info.function}')
-                if not grid_info:
-                    tmb.showwarning("Warning", "Card played isn't even grided yet!\nAttempting next available label")
-                    card_display_label = next((i for i in self._computer_labels.values() if i.grid_info()))
+                card_display_label = self.comp_get_next_available_label(is_gridded=True)
                 card_display_label.grid_forget()
                 
                 self.computer_request_card_with_20(card)                     
@@ -1600,38 +1596,33 @@ class Whot(images):
             tmb.showerror('Computer Error', e)
 
     def compPlayEngine(self, event=None):
-        # logging.debug('Engine triggered')
         if not self.get_player_turn('comp') and not self.__check_checkmate:
             return
-
-        # if self._whot.requests['player2']: #TODO: Redundant???
-        #     self.computer_response_to_card_20()
 
         if self._computer.requested_card_idx is not None:
             idx = self._computer.requested_card_idx
             card = self._label_reference[idx]
             ic(idx, card, self._label_reference.index(card))
             logging.debug(f'[requested_card_idx]: idx: {idx}, card: {card}, label_ref_index(card): {self._label_reference.index(card)}')
-            if not card: #comp has somehow played that card (maybe p2 counter requested with whot20)
+            if card: #comp has somehow played that card (maybe p2 counter requested with whot20)
+
+                last_played_card = self._whot.PlayedCards()[-1]
+                if (card[0][1][0] == last_played_card[1][0] or
+                    card[0][1][1] == last_played_card[1][1] or
+                    last_played_card[1][1] == 20):
+
+                    self.computer_play(card[0])
+                    self._label_reference.pop(self._label_reference.index(card))
+                    self._computer.requested_card_idx = None
+                    return
+                else:
+                    self._computer.requested_card_idx = None
+            else:
+                #card idx now useless as a counter powerup was played by p2
                 self._computer.requested_card_idx = None
-                return
-            
-            last_played_card = self._whot.PlayedCards()[-1]
-            if (card[0][1][0] == last_played_card[1][0] or
-                card[0][1][1] == last_played_card[1][1] or
-                last_played_card[1][1] == 20):
-                self.computer_play(
-                    card[0], 
-                    self._computer_labels.get(idx)
-                )
-                self._label_reference.pop(self._label_reference.index(card))
-                self._computer.requested_card_idx = None
-                return
-            #card idx now useless as a counter powerup was played by p2
-            self._computer.requested_card_idx = None
+
 
         containers = [self._found_20, self._found_num, self._found_str]
-        lab_ref_idx = None
 
         for idx, card in enumerate(self._label_reference):
             if not card:
@@ -1639,17 +1630,14 @@ class Whot(images):
             
             if card[0][1][1] == 20:
                 self.parse_and_remove_comp_cards(containers[0], card, idx)
-                lab_ref_idx = idx
                 break
 
             if not self._found_20 and card[0][1][1] == self._whot.PlayedCards()[-1][1][1]:
                 self.parse_and_remove_comp_cards(containers[1], card, idx)
-                lab_ref_idx = idx
                 break
 
             if not self._found_num and not self._found_20 and card[0][1][0] == self._whot.PlayedCards()[-1][1][0]:
                 self.parse_and_remove_comp_cards(containers[2], card, idx)
-                lab_ref_idx = idx
                 break
         
         # found_valid_card = []
@@ -1661,7 +1649,6 @@ class Whot(images):
             self.comp_engine_play_valid_card(
                 containers.index(found_valid_card), 
                 found_valid_card[0][0],
-                lab_ref_idx
             )
         else:
             # ic('applying difficulty (Mart)...')
@@ -1687,21 +1674,31 @@ class Whot(images):
             self, 
             found_index: int, 
             card: tuple[tk.PhotoImage, tuple[str, int]],
-            lab_ref_idx: int
         ):
-        # ic.configureOutput(prefix='[Play Valid Card]: ')
 
-        ic('[play valid card]:', found_index, card, lab_ref_idx, self._computer_labels.get(lab_ref_idx).grid_info())
-        logging.debug(f'[Comp Play Valid Card]: {found_index}, {card[1]}, {lab_ref_idx}')
+        ic('[play valid card]:', found_index, card)
+        logging.debug(f'[Comp Play Valid Card]: {found_index}, {card[1]}')
         if found_index == 1: # found num
             if card[1][1] == self._whot.PlayedCards()[-1][1][1]:
-                self.computer_play(card, self._computer_labels.get(lab_ref_idx))
+                self.computer_play(card)
         elif found_index == 2: # found str
             if card[1][0] == self._whot.PlayedCards()[-1][1][0]:
-                self.computer_play(card, self._computer_labels.get(lab_ref_idx))
+                self.computer_play(card)
         else:
-            self.computer_play(card, self._computer_labels.get(lab_ref_idx))
+            self.computer_play(card)
     
+    def comp_get_next_available_label(self, is_gridded = False) -> tk.Label:
+        """
+        Retrieve the next available label for the computer.
+
+        Parameters:
+            is_gridded (bool): Optional. If True, only return a label that is currently gridded.
+            If False, return the next label that hasnt been gridded.
+        """
+        if is_gridded:
+            return next((label for label in self._computer_labels.values() if label.grid_info()))
+        else:
+            return next((label for label in self._computer_labels.values() if not label.grid_info()))
 
     def comp_card_streak(self, card_streak_no: int):
         """This Searches For Similar Cards In Computer's Cardstack And Plays It.
@@ -1715,7 +1712,6 @@ class Whot(images):
                     found_card_streak_no = [idx, i]
                     self._label_reference.insert(idx, [])
                     self._label_reference.pop(self._label_reference.index(i))
-                    # print("\nfound a card streak -->", found_card_streak_no, "\n")
                     logging.debug(f'found a card streak --> {found_card_streak_no}')
                     ic(found_card_streak_no)
                     break
@@ -1725,20 +1721,17 @@ class Whot(images):
             #! Issue might be stemming from here
             #! might be supplying labels that arent displayed and we there grid forgetting
             if found_card_streak_no:
-                self.computer_play(
-                    found_card_streak_no[1][0], 
-                    self._computer_labels.get(found_card_streak_no[0])
-                )
+                self.computer_play(found_card_streak_no[1][0])
 
             else:
                 # Computer's continue has to be after it plays a non streak card
-                self.compPlayEngine()
+                self._root.after(self.COMP_PLAY_DELAY//2, self.compPlayEngine)
 
                 self._root.after(250, lambda: self.popup_message("Continue", "Continue", 400))
                 self.set_player_turn('p2')
                 
         elif self._whot.requests['player2']:
-            self._root.after(500, self.compPlayEngine)
+            self._root.after(self.COMP_PLAY_DELAY, self.compPlayEngine)
 
     
     def comp_mart(self, gone_to_mart_before=False):
@@ -1756,10 +1749,7 @@ class Whot(images):
 
                 self._label_reference[o].append(self._computer.cards()[-1])
 
-                new_lab = self._computer_labels.get(o)
-                if new_lab.grid_info():
-                    tmb.showwarning('Warning', 'Card from mart is already grided!')
-                    new_lab = next((i for i in self._computer_labels.values() if not i.grid_info()))
+                new_lab = self.comp_get_next_available_label(is_gridded=False)
                 new_lab.config(image=self._misc_whot1)
                 new_lab.grid(row=0, column=self._comp_lab_grid_pos, padx=6, pady=6)
                 self._comp_lab_grid_pos -=1
@@ -1782,7 +1772,7 @@ class Whot(images):
         for idx, i in enumerate(self._label_reference):
             if not i:
                 continue
-            if i[0][1][1] in [1, 2, 8, 14]:
+            if i[0][1][1] in [1, 2, 8, 14] and i[0][1][0] != 'whot':
                 found_viable_card = i[0][1][0]
                 break
         
@@ -1821,8 +1811,7 @@ class Whot(images):
         if self._found_request:
             ic('Computer playing p2 request rn...')
             logging.debug('Computer is playing p2 request rn...')
-            i = self._found_request[0]
-            self.computer_play(i[1][0], self._computer_labels.get(i[0])) #* The play function should clear p2 request
+            self.computer_play(self._found_request[0][1][0]) #* The play function should clear p2 request
             self._found_request.clear()
             return
 
@@ -1863,8 +1852,7 @@ class Whot(images):
             self.__check_checkmate = True
             self._root.unbind("<Return>")
             tmb.showinfo("Checkmate", "You are the winner")
-            for i in self._depot_p2_btns:
-                i.config(state='disabled')
+            [btn.config(state='disabled') for btn in self._depot_p2_btns]
             self._market_btn.config(state='disabled')
             self._root.title(f'{self._title} - Checkmate')
             self.__restart()
@@ -1881,8 +1869,7 @@ class Whot(images):
             self.__check_checkmate = True
             self._root.unbind("<Return>")
             tmb.showinfo("Checkmate", f"The {player} is the winner")
-            for i in self._depot_p2_btns:
-                i.config(state='disabled')
+            [btn.config(state='disabled') for btn in self._depot_p2_btns]
             self._market_btn.config(state='disabled')
             self._root.title(f'{self._title} - Checkmate')
             self.__restart()
