@@ -33,8 +33,8 @@ class Whot(images):
         self._config: dict[str, str | bool | dict[str, str | int]] = {}
         self.load_config_file()
         
-        self._player2_frame = Pmw.ScrolledFrame(self._root, 
-                                                labelpos='s', 
+        self._player2_frame = Pmw.ScrolledFrame(self._root,
+                                                labelpos='s',
                                                 usehullsize=1,
                                                 hull_width=100,
                                                 hull_height=225
@@ -43,7 +43,7 @@ class Whot(images):
         self._played_cards_frame = tk.Frame(self._root)
 
         self._comp_frame = Pmw.ScrolledFrame(self._root,
-                                            labelpos='n', 
+                                            labelpos='n',
                                             usehullsize=1,
                                             hull_width=100,
                                             hull_height=225,
