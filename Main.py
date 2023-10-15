@@ -10,7 +10,7 @@ logging.basicConfig(filename='whot.log', level=logging.DEBUG)
 class Whot(images):
     'A Game of cards usually involving two players by default, see manual for more info.'
     
-    # Cards: list[tuple[tk.PhotoImage, tuple[str, int]]] = []
+    Cards: list[tuple[tk.PhotoImage, tuple[str, int]]] = []
     requests: dict[str, str | None] = {
             'player2': None,
             'computer': None,
@@ -21,6 +21,13 @@ class Whot(images):
             random.seed(shuffle_seed)
             print('\n$$$$$ Seed implemented in main -->', shuffle_seed, '$$$$$\n')
 
+        self.powerup_cards = {
+            1: False,
+            2: False,
+            8: False,
+            14: False,
+        }
+
         super().__init__()
         
     def InitDepot(self):
@@ -29,10 +36,10 @@ class Whot(images):
         shuffle(Whot.Cards)
 
     def NormCards(self):
-        'Normalize the cards if startcard has whot 20 in it'
+        'Replace the last card if it has a powerup in it'
 
         played_cards = self.PlayedCards()
-        if played_cards[-1][1][1] != 20:
+        if played_cards[-1][1][1] not in [20, 1, 2, 8, 14]:
             return
         
         misc_cards = [i for i in Whot.Cards[:4] if i not in played_cards]
@@ -59,8 +66,8 @@ class Whot(images):
         Whot.Cards = Whot.Cards[11:] #remove the first 10 cards and the appended played card from the Whot.Cards
 
     def LoopDepot(self):
-        'Loops depot cards if they are less than or equal to 14'
-        if len(Whot.Cards) <= 14:
+        'Loops depot cards if they are less than or equal to 6'
+        if len(Whot.Cards) <= 6:
             self.InitDepot()
 
 
@@ -89,7 +96,7 @@ class Whot(images):
             if i[1][1] == num:
                 player_cards = {'comp': card1, 'p2': card2, 'op': card1}
                 player_cards[player].append(i)
-                Whot.Cards.remove(Whot.Cards[o])
+                Whot.Cards.pop(Whot.Cards.index(o))
                 found_num = True
                 break
         return found_num
@@ -98,14 +105,9 @@ class Whot(images):
 class Computer(Whot):
     'Objects and attributes for Computer'
     def __init__(self):
-        super().__init__()
-        self.comp_powerup_2=[0]
-        self.comp_powerup_8=[0]
-        self.comp_powerup_1=[0]
-        self.comp_powerup_14=[0]
-        self.comp_powerup_20=[0]
 
         self.requested_card_idx: int = None
+        super().__init__()
 
     def play(self, playcard: tuple[tk.PhotoImage, tuple[str, int]]):
         'Computer plays a valid card in their cardstack'
@@ -122,16 +124,8 @@ class Computer(Whot):
                 
                 logging.debug(f'[Computer played]; {playcard[1]} length; {len(self.cards())}')
                 
-                powerup_cards = {
-                    1: self.comp_powerup_1,
-                    2: self.comp_powerup_2,
-                    8: self.comp_powerup_8,
-                    14: self.comp_powerup_14,
-                    20: self.comp_powerup_20
-                }
-                
-                if playcard[1][1] in powerup_cards:
-                    powerup_cards[playcard[1][1]].insert(0, playcard[1][1])
+                if playcard[1][1] in self.powerup_cards:
+                    self.powerup_cards[playcard[1][1]] = True
                 
                 self.PlayedCards().append(playcard)
                 self.cards().remove(playcard)
@@ -153,31 +147,18 @@ class Computer(Whot):
     def gomart(self):
         'Sends Computer to Market'
         self.LoopDepot()
-        self.cards().append(Whot.Cards[11])
-        Whot.Cards.remove(Whot.Cards[11])
+        self.cards().append(Whot.Cards.pop(0))
         self.handle_requests()
         logging.debug(f'[Computer] went to market: {self.cards()[-1][1]}')
 
-    def gogenmart(self):
-        "General market"
-        self.LoopDepot()
-        self.cards().append(Whot.Cards[12])
-        Whot.Cards.remove(Whot.Cards[12])
-        self.handle_requests()
-        logging.debug(f'[Computer] went to general market: {self.cards()[-1][1]}')
         
 
 class Player2(Whot):
     'Objects and attributes for Player2'
     def __init__(self):
+
+        self.requested_card: str = None #TODO: May be deprecated in the future
         super().__init__()
-        self.p2_powerup_2=[0]
-        self.p2_powerup_1=[0]
-        self.p2_powerup_8=[0]
-        self.p2_powerup_14=[0]
-        self.p2_powerup_20=[0]
-        
-        self.requested_card: str = None #TODO: May be redundant in the future
         
     def play(self, playcard: tuple[tk.PhotoImage, tuple[str, int]]):
         'Player2 Plays a valid card in his/her cardstack'
@@ -195,16 +176,8 @@ class Player2(Whot):
 
                 logging.debug(f'[Player2 played]; {playcard[1]} length; {len(self.cards())}')
 
-                powerup_cards = {
-                    1: self.p2_powerup_1,
-                    2: self.p2_powerup_2,
-                    8: self.p2_powerup_8,
-                    14: self.p2_powerup_14,
-                    20: self.p2_powerup_20
-                }
-
-                if playcard[1][1] in powerup_cards:
-                    powerup_cards[playcard[1][1]].insert(0, playcard[1][1])
+                if playcard[1][1] in self.powerup_cards:
+                    self.powerup_cards[playcard[1][1]] = True
 
                 self.PlayedCards().append(playcard)
                 self.cards().remove(playcard)
@@ -215,7 +188,7 @@ class Player2(Whot):
         else:
             raise WhotException("Error: Playcard is not in your cardstack!")
     
-    def handle_requests(self, playcard: tuple[tk.PhotoImage, tuple[str, int]] = None):
+    def handle_requests(self, playcard: tuple[tk.PhotoImage, tuple[str, int]]=None, mart=False):
         if playcard:
             if self.requests['onlineplayer'] or self.requests['computer']:
                 request = self.requests['onlineplayer'] or self.requests['computer']
@@ -229,6 +202,8 @@ class Player2(Whot):
                 raise WhotException(f"Nigga Play The Card You Just Requested Hint: {self.requested_card}!")
             else:
                 self.requested_card = None
+            if mart:
+                self.requested_card = None
         else:
             self.requests['onlineplayer'] = None
             self.requests['computer'] = None
@@ -241,31 +216,18 @@ class Player2(Whot):
     def gomart(self):
         "Sends player2 to market"
         self.LoopDepot()
-        self.cards().append(Whot.Cards[13])
-        Whot.Cards.remove(Whot.Cards[13])
+        self.cards().append(Whot.Cards.pop(0))
         #! incase the player goes to mart from absence of the requested card
-        self.handle_requests()
+        self.handle_requests(mart=True)
         logging.debug(f'[Player2] went to market: {self.cards()[-1][1]}')
 
-    def gogenmart(self):
-        "Gen market"
-        self.LoopDepot()
-        self.cards().append(Whot.Cards[14])
-        Whot.Cards.remove(Whot.Cards[14])
-        #! incase the player goes to mart from absence of the requested card
-        self.handle_requests()
-        logging.debug(f'[Player2] went to general market: {self.cards()[-1][1]}')
 
 
 class OnlinePlayer(Whot):
     'Objects and attributes for OnlinePlayer'
     def __init__(self):
+        
         super().__init__()
-        self.op_powerup_2=[0]
-        self.op_powerup_1=[0]
-        self.op_powerup_8=[0]
-        self.op_powerup_14=[0]
-        self.op_powerup_20=[0]
 
     def play(self, playcard: tuple[tk.PhotoImage, tuple[str, int]]):
         'OnlinePlayer Plays a valid card in his/her cardstack'
@@ -287,16 +249,8 @@ class OnlinePlayer(Whot):
 
                 logging.debug(f'[OnlinePlayer played]; {playcard[1]} length: {len(self.cards())}')
 
-                powerup_cards = {
-                    1: self.op_powerup_1,
-                    2: self.op_powerup_2,
-                    8: self.op_powerup_8,
-                    14: self.op_powerup_14,
-                    20: self.op_powerup_20
-                }
-
-                if playcard[1][1] in powerup_cards:
-                    powerup_cards[playcard[1][1]].insert(0, playcard[1][1])
+                if playcard[1][1] in self.powerup_cards:
+                    self.powerup_cards[playcard[1][1]] = True
 
                 self.PlayedCards().append(playcard)
                 self.cards().remove(playcard)
@@ -315,14 +269,8 @@ class OnlinePlayer(Whot):
     def gomart(self):
         "Sends OnlinePlayer to market"
         self.LoopDepot()
-        self.cards().append(Whot.Cards[13])
-        Whot.Cards.remove(Whot.Cards[13])
+        self.cards().append(Whot.Cards.pop(0))
 
-    def gogenmart(self):
-        "Gen market"
-        self.LoopDepot()
-        self.cards().append(Whot.Cards[14])
-        Whot.Cards.remove(Whot.Cards[14])
         
 
 class WhotException(Exception):
@@ -337,7 +285,6 @@ class WhotException(Exception):
 if __name__ == '__main__':
     yap = tk.Tk()
     app = Whot()
-    #app.Init()
     app.InitDepot()
     app.InitPlayerCards()
     app.InitComputerCards()
