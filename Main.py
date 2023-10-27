@@ -4,7 +4,7 @@ from GameImages import images
 import tkinter as tk
 from typing import Literal
 import logging
-logging.basicConfig(filename='whot.log', level=logging.DEBUG)
+logging.basicConfig(filename='whot.log', level=logging.DEBUG, datefmt='%H:%M:%S')
 
 
 class Whot(images):
@@ -96,7 +96,7 @@ class Whot(images):
             if i[1][1] == num:
                 player_cards = {'comp': card1, 'p2': card2, 'op': card1}
                 player_cards[player].append(i)
-                Whot.Cards.pop(Whot.Cards.index(o))
+                Whot.Cards.pop(Whot.Cards.index(i))
                 found_num = True
                 break
         return found_num
