@@ -43,7 +43,7 @@ class Server:
             data = data[len(b'{INIT_DATA}'):].decode('ascii')
             self._server_data = json.loads(data)
         
-    def broadcast(self, message: bytes, sender: socket.socket, exclude_sender=True):
+    def broadcast(self, message: bytes, sender: socket.socket=None, exclude_sender=True):
         if exclude_sender:
             for client in self.clients:
                 if client != sender:
@@ -64,7 +64,12 @@ class Server:
                 self.clients.remove(conn)
                 conn.close()
                 nickname = self.nicknames[index]
-                self.broadcast(f'{nickname} has left the chat!'.encode('ascii'), conn)
+
+                # Send a tag to the other clients, of the exit of curr client
+                # self.broadcast(f'{nickname} has left the chat!'.encode('ascii'), conn)
+                other_client_exit = '{OTHER_CLIENT_EXIT}' + f'{nickname} has left the chat!'
+                self.broadcast(other_client_exit.encode('ascii'), conn)
+                
                 self.nicknames.remove(nickname)
                 self._server_is_alive = False
                 break
@@ -72,7 +77,11 @@ class Server:
 
     def receive_client(self):
         while self._server_is_alive:
-            client, address = self.server_socket.accept()
+            try:
+                client, address = self.server_socket.accept()
+            except OSError as e:
+                print(f"An error occured! {e}")
+                break
 
             client.send('NICK'.encode('ascii'))
             nickname = client.recv(1024).decode('ascii')
@@ -81,7 +90,9 @@ class Server:
 
             print(f'{nickname} Connected with {address}')
 
-            self.broadcast(f"{nickname} joined!".encode('ascii'), client)
+            #broadcast with a tag that a user joined
+            user_joined = "{CLIENT_JOINED}" + f"{nickname} joined!"
+            self.broadcast(user_joined.encode('ascii'), client)
             
             init_data = "{INIT_DATA}" + json.dumps(self._server_data)
             client.send(init_data.encode('ascii'))
@@ -90,6 +101,9 @@ class Server:
             thread.start()
         
     def shutdown(self):
+        print('shutting down server')
+        server_shutdown_msg = '{SERVER_SHUTDOWN}' + f'Server Shutting Down!'
+        self.broadcast(server_shutdown_msg.encode('ascii'), exclude_sender=False)
         self._server_is_alive = False
         self.server_socket.close()
     
