@@ -11,12 +11,11 @@ from random import choice
 import tkinter.messagebox as tmb
 import time, threading, queue, os
 import pickle, json
-from typing import Literal
+from typing import Literal, Callable
 from icecream import ic
 import logging
-
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')#, datefmt='%H:%M:%S')
-
+# logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s\n', filename='whot.log')#, datefmt='%H:%M:%S')
+logging.basicConfig(level=logging.DEBUG, format='%(message)s\n', filename='whot.log')
 
 class Whot(images):
     """Naija Whot Game in Grand Style - By Genesis Chrome"""
@@ -28,6 +27,7 @@ class Whot(images):
         self._root.minsize(610, 690)
         self._title = 'Whot Game'
         self._root.title(self._title)
+        self._root.wm_iconbitmap('genesis.ico')
         self._root.protocol("WM_DELETE_WINDOW", self.__exit)
         super().__init__()
 
@@ -367,7 +367,102 @@ class Whot(images):
 
         with open('./config.pkl', 'wb+') as config_loc:
             pickle.dump(self._config, config_loc)
+    
+    def Manual(self, event=None):
+        """See the Manual of the Game"""
+        root = self.create_toplevel_at_center(width=650, height=420)
+        root.title("<Manual>")
+        root.transient(self._root)
+        root.resizable(False, False)
 
+        theme = self.get_actual_theme(for_text=True)
+        text_box = ctk.CTkTextbox(
+            root, 
+            width=650,
+            height=420,
+            wrap='word',
+            font=self.font_style,
+            text_color=theme
+        )
+        text_box.insert(tk.INSERT, manual)
+        text_box.configure(state='disabled')
+        text_box.focus_set()
+        text_box.grab_set()
+        text_box.place(relx=0.0, rely=0.0, relheight=1.0, relwidth=1.0)
+
+    def gameover(self):
+        """Freezes all buttons and stops the computer | player2 | onlinep from playing 
+        if any player's cards finish"""
+        
+        player2_cards = len(self._player2.cards())
+        other_player_cards = len(self._onlinep.cards()) if self._onlinePlayerActive else len(self._computer.cards())        
+        
+        if player2_cards != 0 and other_player_cards != 0:
+            return
+        
+        self.__check_p2_played = True
+        self.__checkcomp_played = True
+        self.__check_gameover = True
+        self._root.unbind("<Return>")
+        
+        if not player2_cards:
+            tmb.showinfo("Game Over", "You Are The Winner")
+        elif not other_player_cards:
+            if self._onlinePlayerActive:
+                tmb.showinfo("Game Over", f"{self._onlineNickname or 'OnlinePlayer'} Is The Winner")
+            else:
+                tmb.showinfo("Game Over", "The Computer Is The Winner")
+        
+        for btn in self._depot_p2_btns:
+            btn.configure(state='disabled')
+        self._market_btn.configure(state='disabled')
+        self._root.title(f'{self._title} - Game Over')
+        self._root.after(200, self.__restart)
+
+
+    def __restart(self, force=False):
+        """Restart the Whot Game"""
+
+        if self._onlinePlayerActive:
+            if self._server_choice == 'start server':
+                self._onlineServer.shutdown()
+            self._onlineClient.shutdown()
+
+        if not force:
+            ask = tmb.askyesnocancel("Restart Game", "Do you want to restart the game?")
+            if ask:
+                self.reinitialize_cards(onlinePlayer=False)
+            elif ask is None:
+                pass
+            else:
+                self.__exit()
+        else:
+            self.reinitialize_cards(onlinePlayer=False, prev_onlinep=True)
+
+    def __exit(self):
+        if self._onlinePlayerActive:
+            self._onlinePlayerActive = False
+            if not self._connectionFailed:
+                if self._server_choice == 'start server':
+                    self._onlineServer.shutdown()
+                self._onlineClient.shutdown()
+
+        self._root.after(500, self._whot_threads)
+
+
+    def _whot_threads(self):
+        """Return Active Threads"""
+        self._root.quit()
+        self._root.destroy()
+
+        for thread in threading.enumerate():
+            print(f'thread name and is alive --> {[thread.name, thread.is_alive()]}')
+        return threading.enumerate()
+
+
+    #------------------------------------------------------------------------------------
+    # SETTINGS
+    #------------------------------------------------------------------------------------
     def settings(self, event=None):
         """Settings for whot game"""
         top = self.create_toplevel_at_center(width=350, height=360)
@@ -487,6 +582,7 @@ class Whot(images):
         y = self._root.winfo_y() + (root_height - height) // 2
         toplevel.geometry(f'{width}x{height}+{x}+{y}')
         self._root.after(display_delay, toplevel.deiconify)
+        self._root.after(200, toplevel.wm_iconbitmap, 'genesis.ico')
         self._root.after(display_delay+10, self.redraw_window_if_still_withdrawn, toplevel)
 
         return toplevel
@@ -805,207 +901,166 @@ class Whot(images):
             self._depot_onlinep_labels.append(tk.Label(self._comp_frame))
             self._onlinep_labels[max(self._onlinep_labels) + 1] = self._depot_onlinep_labels[-1]
         self.set_theme()  # Sets the theme for the newly added widgets
+    
 
+    #---------------------------------------------------------------------------------
+    # POWERUPS
+    #---------------------------------------------------------------------------------
+    def pick_two(self, player: Literal['comp', 'p2', 'op']):
+        """Makes Player Pick two cards from the mart"""
 
-    def player2_play(
-            self,
-            card: list[tuple[tk.PhotoImage, tuple[str, int]]],
-            card_display_btn: tk.Button,
-            event=None
-    ):
-        """For player2 (actual player) to play his or her valid card"""
-        if self.__check_gameover:
+        if player == 'comp':
+            if self._player2.powerup_cards[2]:
+                self.set_player_turn('comp')
+
+                def comp_pick_two_animation(count: int):
+                    if count < 2:
+                        self.set_player_turn('comp')
+                        self.apply_difficulty()
+                        self._root.after(self.COMP_PLAY_DELAY, comp_pick_two_animation, count + 1)
+
+                comp_pick_two_animation(0)
+
+                self._player2.powerup_cards[2] = False
+                self.set_player_turn('p2')
             return
 
-        if self.get_player_turn('p2'):
-            try:
-                if self._player2.play(card[0]):
-                    player = 'op' if self._onlinePlayerActive else 'comp'
-                    self.set_player_turn(player)
-                    self.p2_request_card_with_20(card)
-            
-                    self.move_card(
-                        card[0][0], 
-                        self._player2_frame._parent_canvas, 
-                        self._played_frame, 
-                        card_display_btn,
-                        from_above=False
-                    )
+        elif player == 'op':  # OP
+            if self._player2.powerup_cards[2]:
+                self.set_player_turn('op')
+                self._onlinep_todo['pick_two'] = 2
+                self._player2.powerup_cards[2] = False
+                return
 
-                    if not self._onlinePlayerActive:
-                        card_display_btn.after(self.COMP_PLAY_DELAY, self.compPlayEngine)
-                    else:
-                        self._onlineClient.send_data(card[0][1], 'CARD')
-
-                    # card_display_btn.grid_forget()
-                    card.clear()
-
-                    self.display_number_of_cards('player2')
-                    self.pick_two(player)
-                    self.go_gen_mart(player)
-                    self.hold_on(player)
-                    self.suspension(player)
-
-                    self.gameover()
-            except Main.WhotException as e:
-                tmb.showwarning(title="INVALID MOVE", message=str(e).upper())
-        else:
-            tmb.showinfo("Not Your Turn", "Its not your turn to play")
-
-
-    def p2_mart(self, power: int = None, event=None):
-        """Responsible for making player2 to go to market (pick a card from the market)"""
-
-        if not self.get_player_turn('p2') or self.__check_gameover:
-            return
-
-        if power:
-            if power == 2:
-                self._check2 += 1
-            elif power == 1:
-                self._check1 += 1
-
-        for o, i in enumerate(self._btn_reference):
-            if i:
-                continue
-            self._player2.gomart()
-            self._btn_reference[o].append(self._player2.cards()[-1])
-            new_btn = self._player2_btns.get(o)
-
-            if event: #When we hit ENTER <RETURN>
-                self._market_btn.config(relief='sunken')
-                self._root.after(100, lambda: self._market_btn.config(relief='raised'))
-
-            new_btn.config(
-                image=self._player2.cards()[-1][0],
-                command=lambda: self.player2_play(
-                    self._btn_reference[o], 
-                    self._player2_btns[o]
-                )
-            )
-            self._root.after(200, self.insert_widget_at_first_column, new_btn)
-
+        elif player == 'p2':
             if self._onlinePlayerActive:
-                self._onlineClient.send_data('MARKET', 'MART')
-            break
+                powerup = self._onlinep.powerup_cards
+            else:
+                powerup = self._computer.powerup_cards
 
-        self.display_number_of_cards('player2')
-        self.set_player_turn('comp' if not self._onlinePlayerActive else 'op')
-        self.repopulate_containers()
+            if powerup[2]:
+                print('\nPICK TWO')
+                self.popup_message("Pick Two", "Pick two cards from the mart")
+                self._root.title(f'{self._title} - PICK TWO')
+                [btn.config(state='disabled') for btn in self._depot_p2_btns]
+                self._market_btn.configure(command=self.check_p2_picked_two_cards)
+                self.bind_return(method='pick_two')
+                powerup[2] = False
 
-        if self._check2 == 1:
-            self._root.title(f'{self._title} - PICK TWO')
-        elif self._check2 == 0 or not self._check2:
-            self._root.title(self._title)
-            self._root.after(self.COMP_PLAY_DELAY, self.compPlayEngine)
-        else:
-            self._root.title(self._title)
-            self._root.after(self.COMP_PLAY_DELAY, self.compPlayEngine)
+    def go_gen_mart(self, player: Literal['p2', 'comp', 'op']):
+        """Makes Player go to general market"""
 
-    def check_p2_picked_two_cards(self, player='comp', event=None):
-        """Checks whether player2 clicked the mart button twice (in other words, checks whether player2 has
-        picked two cards) and then unfreezes player2 cards (buttons) - for PICK TWO"""
+        if player == 'comp':
+            if self.get_player_turn('comp'):
+                if self._player2.powerup_cards[14]:
+                    print("Computer Going to gen mart")
 
-        player = 'comp' if not self._onlinePlayerActive else 'op'
-        self.p2_mart(power=2, event=event)
-        self.set_player_turn('p2')
-        self._root.title(f'{self._title} - PICK TWO')
+                    self.apply_difficulty()
 
-        if self._check2 == 2:  # Done picking two cards
-            self.set_player_turn(player)
-            [btn.config(state='normal') for btn in self._depot_p2_btns]
-            self._check2 = 0
-            self._market_btn.configure(command=self.p2_mart)
-            self.bind_return(method='mart')
-            self._root.title(self._title)
-
-    def check_p2_picked_a_card(self, player='comp', event=None):
-        """Checks whether player2 clicked the mart button once (in other words, checks whether player2 has
-        picked one card) and then unfreezes player2 cards (buttons) - for GENERAL MARKET"""
-        player = 'comp' if not self._onlinePlayerActive else 'op'
-        self.p2_mart(power=1, event=event)
-        if self._check1 == 1:
-            self.set_player_turn(player)
-            [btn.config(state='normal') for btn in self._depot_p2_btns]
-            self._check1 = 0
-            self._market_btn.configure(command=self.p2_mart)
-            self.bind_return(method='mart')
-
-    def p2_request_card_with_20(self, card: list[tuple[tk.PhotoImage, tuple[str, int]]]):
-        """Player2 (actual player) demands a particular card from computer after playing whot 20"""
-
-        if len(self._player2.cards()) == 0 or not card[0][1][1] == 20:
+                    self._player2.powerup_cards[14] = False
+                    self.set_player_turn('p2')
             return
 
-        self.set_player_turn('p2')
+        elif player == 'op':
+            logging.debug(f'GENERAL MARKET - {player}')
+            if self._player2.powerup_cards[14]:
+                self.set_player_turn('op')
+                self._onlinep_todo['general_market'] = 1
+                self._player2.powerup_cards[14] = False
+                return
 
-        card_root = ctk.CTkToplevel(self._root)
-        card_root.transient(self._root)
-        x, y = self._root.winfo_x(), self._root.winfo_y()
-        card_root.geometry(f'230x480+{x}+{y}')
-        card_root.title("Ask for a card")
-        card_root.resizable(False, False)
+        elif player == 'p2':
+            if self._onlinePlayerActive:
+                powerup = self._onlinep.powerup_cards
+            else:
+                powerup = self._computer.powerup_cards
 
-        label_theme = self.get_actual_theme(for_text=True)
-        button_theme = self._themes_dict.get(self._theme_var.get())
+            if powerup[14]:
+                logging.debug(f'GENERAL MARKET - {player}')
+                self.popup_message("General Market", "General Market")
+                self._root.title(f'{self._title} - GENERAL MARKET')
+                [btn.config(state='disabled') for btn in self._depot_p2_btns]
+                self._market_btn.configure(command=self.check_p2_picked_a_card)
+                self.bind_return(method='pick_one')
+                powerup[14] = False
 
-        command = lambda card_name, toplev: self._p2_clicked_card(card_name, toplev)
+    def hold_on(self, player: Literal['p2', 'comp', 'op']):
+        """Makes Player to hold on until the other player plays another card or goes to the mart,
+        after playing a card with number 1 in it"""
 
-        card_buttons = [
-            ('Cross', self._cross_icon),
-            ('Circle', self._circle_icon),
-            ('Star', self._star_icon),
-            ('Triangle', self._triangle_icon),
-            ('Square', self._square_icon)
-        ]
-
-        for i, (card_name, icon) in enumerate(card_buttons):
-            button = tk.Button(
-                card_root, 
-                image=icon, 
-                command=lambda i=i: command(card_buttons[i][0], card_root),
-                bg=button_theme)
-            button.grid(row=i, column=0, pady=3, padx=15)
-            ctk.CTkLabel(
-                card_root, 
-                text=card_name, 
-                text_color=label_theme,
-                font=self.smaller_font
-            ).grid(row=i, column=1)
-
-        ctk.CTkLabel(
-            card_root, 
-            text='Choose Desired Card', 
-            text_color=label_theme,
-            font=self.font_style
-        ).place(relx=0.13, rely=0.896)
-
-        card_root.protocol('WM_DELETE_WINDOW', lambda: self._p2_clicked_card(None, card_root))
-        card_root.focus_set()
-        card_root.grab_set()
-
-    def _p2_clicked_card(self, card: str, window: ctk.CTkToplevel):
-        """Registers player2's Desired card and calls player1 (computer or OP) to respond to the request"""
-        window.destroy()
-        [btn.config(state='normal') for btn in self._depot_p2_btns]
-        self._market_btn.configure(state='normal')
-        window.grab_release()
-
-        player = 'comp' if not self._onlinePlayerActive else 'op'
-        self.set_player_turn(player)
-        if not card:
-            self._root.after(500, self.compPlayEngine)
+        if player == 'comp':
+            if self._player2.powerup_cards[1]:
+                self.set_player_turn('p2')
+                self._player2.powerup_cards[1] = False
             return
-        
-        if not self._onlinePlayerActive:
-            self._whot.requests['player2'] = card
-            # TODO
-            self._player2.requested_card = card
-            self._root.after(500, self.computer_response_to_card_20)
-        else:
-            self._onlineClient.send_data(card, data_type='REQUEST')
 
-    # ----------------------------------------------------------------------------------------------------
+        elif player == 'op':
+            logging.debug(f'HOLD ON - {player}')
+            if self._player2.powerup_cards[1]:
+                self.set_player_turn('p2')
+                # Actual hold on handled in the recv end (self.handle_onlinep_todo)
+                self._player2.powerup_cards[1] = False
+                return
+
+        elif player == 'p2':
+            if self._onlinePlayerActive:
+                powerup = self._onlinep.powerup_cards
+            else:
+                powerup = self._computer.powerup_cards
+
+            if powerup[1]:
+                logging.debug(f'HOLD ON - {player}')
+                self.popup_message("Hold On", "Hold On")
+                self._root.title(f'{self._title} - HOLD ON')
+                powerup[1] = False
+                self.gameover()
+                if not self._onlinePlayerActive:
+                    self._root.after(self.COMP_PLAY_DELAY, lambda: self.comp_card_streak(1))
+                else:
+                    self.set_player_turn('op')
+
+            # self.set_player_turn('comp')
+
+    def suspension(self, player: Literal['p2', 'comp', 'op']):
+        """Just like hold on, it suspends the other player until they play
+          another card or go to mart"""
+
+        if player == 'comp':
+            if self._player2.powerup_cards[8]:
+                self.set_player_turn('p2')
+                self._player2.powerup_cards[8] = False
+            return
+
+        elif player == 'op':
+            logging.debug(f'SUSPENSION - {player}')
+            if self._player2.powerup_cards[8]:
+                self.set_player_turn('p2')
+                # Actual suspension handled in the recv end (self.handle_onlinep_todo)
+                self._player2.powerup_cards[8] = False
+                return
+
+        elif player == 'p2':
+            if self._onlinePlayerActive:
+                powerup = self._onlinep.powerup_cards
+            else:
+                powerup = self._computer.powerup_cards
+            if powerup[8]:
+                logging.debug(f'SUSPENSION - {player}')
+                self.popup_message("Hold On", "Suspension")
+                self._root.title(f'{self._title} - SUSPENSION')
+
+                powerup[8] = False
+                self.gameover()
+
+                if not self._onlinePlayerActive:
+                    self._root.after(500, lambda: self.comp_card_streak(8))
+                else:
+                    self.set_player_turn('op')
+
+
+    # --------------------------------------------------------------------------------------
+    # ANIMATIONS
+    #---------------------------------------------------------------------------------------
     def create_playedcard_image(self, from_theme=False):
         played_canvas = self._played_frame
         image = self._whot.PlayedCards()[-1][0]
@@ -1210,9 +1265,10 @@ class Whot(images):
                     label.grid(row=0, column=column)
             widget.grid(row=0, column=0, padx=6, pady=6)
 
-    def generate_shuffle_seed(self):
-        return int.from_bytes(os.urandom(4), 'big')
 
+    #-------------------------------------------------------------------------------------
+    # CARDS INITIALIZATION
+    #-------------------------------------------------------------------------------------
     def reinitialize_cards(
             self,
             onlinePlayer=False,
@@ -1278,7 +1334,7 @@ class Whot(images):
         self.set_theme()
 
         return player_turn
-
+    
     def initialize_card_graphics(self, onlinePlayer=False) -> None:
         """
         Initializes the graphics for the card game, specifically the buttons and labels for Player 2 and Computer players.
@@ -1290,9 +1346,9 @@ class Whot(images):
         self._btn_reference: list[list[tuple[tk.PhotoImage, tuple[str, int]]]]
         self._label_reference: list[list[tuple[tk.PhotoImage, tuple[str, int]]]]
 
-        #---------------------------------------------------------------------------
-        # Initialize and Display Player2 Buttons and Sync with their Button references (Butrefs)
-        #-------------------------------
+        #+++++++++++++++++++++++
+        # Initialize for player2
+        #+++++++++++++++++++++++
         self._btn_reference = [[] for _ in range(30)]
         self._depot_p2_btns = [tk.Button(self._player2_frame) for _ in range(30)]
 
@@ -1305,11 +1361,10 @@ class Whot(images):
                 image=player2_cards[i][0],
                 command=lambda i=i: self.player2_play(self._btn_reference[i], self._player2_btns[i])
             )
-        #----------------------------------------------------------------------------
         
-        #----------------------------------------------------------------------------
+        #++++++++++++++++++++++++++++
         # Initialize for onlineplayer
-        #----------------------------
+        #++++++++++++++++++++++++++++
         if onlinePlayer:
             self._label_reference = [[] for _ in range(30)]
             self._depot_onlinep_labels = [tk.Label(self._comp_frame, relief='raised') for _ in range(30)]
@@ -1319,11 +1374,10 @@ class Whot(images):
                 self._onlinep_labels[i].config(image=self._misc_whot1)
                 self._label_reference[i].append(self._onlinep.cards()[i])
             
-        #----------------------------------------------------------------------------
 
-        #----------------------------------------------------------------------------
+        #++++++++++++++++++++++++
         # Initialize for computer
-        #-------------------------
+        #++++++++++++++++++++++++
         else:
             self._label_reference = [[] for _ in range(30)]
             self._depot_comp_labels = [tk.Label(self._comp_frame, relief='raised') for _ in range(30)]
@@ -1333,7 +1387,7 @@ class Whot(images):
             for i in range(5):
                 self._computer_labels[i].config(image=self._misc_whot1)
                 self._label_reference[i].append(self._computer.cards()[i])
-        #-------------------------------------------------------------------------------        
+
         self._market_btn = tk.Button(
             self._played_frame,
             image=self._misc_whot,
@@ -1342,29 +1396,236 @@ class Whot(images):
         )
         self._market_btn.place(relx=0.027, rely=0.10)
         if onlinePlayer:
-            self._other_client_connected = False
-            self._multiplayer_switch_var = tk.BooleanVar(value=True)
-            self._multiplayer_switch = ctk.CTkSwitch(
-                self._root,
-                height=21,
-                text='On/Off',
-                font=self.smaller_font,
-                onvalue=True,
-                offvalue=False,
-                variable=self._multiplayer_switch_var,
-                command=self.terminate_multiplayer
-            )
-            self._multiplayer_switch.place(relx=0.414, rely=0.954)
-            self._multiplayer_indicator = ctk.CTkLabel(
-                self._root,
-                height=21,
-                width=84,
-                text='Waiting...',
-                font=self.smaller_font,
-                text_color=self.get_actual_theme(for_text=True),
-            )
-            self._multiplayer_indicator.place(relx=0.559, rely=0.954)
+            self.create_multiplayer_indicators()
         return
+    
+
+    #-------------------------------------------------------------------------------------
+    # PLAYER2
+    #-------------------------------------------------------------------------------------
+    def player2_play(
+            self,
+            card: list[tuple[tk.PhotoImage, tuple[str, int]]],
+            card_display_btn: tk.Button,
+            event=None
+    ):
+        """For player2 (actual player) to play his or her valid card"""
+        if self.__check_gameover:
+            return
+
+        if self.get_player_turn('p2'):
+            try:
+                if self._player2.play(card[0]):
+                    player = 'op' if self._onlinePlayerActive else 'comp'
+                    self.set_player_turn(player)
+                    self.p2_request_card_with_20(card)
+            
+                    self.move_card(
+                        card[0][0], 
+                        self._player2_frame._parent_canvas, 
+                        self._played_frame, 
+                        card_display_btn,
+                        from_above=False
+                    )
+
+                    if not self._onlinePlayerActive:
+                        card_display_btn.after(self.COMP_PLAY_DELAY, self.compPlayEngine)
+                    else:
+                        self._onlineClient.send_data(card[0][1], 'CARD')
+
+                    card.clear()
+                    self.display_number_of_cards('player2')
+                    self.pick_two(player)
+                    self.go_gen_mart(player)
+                    self.hold_on(player)
+                    self.suspension(player)
+
+                    self.gameover()
+            except Main.WhotException as e:
+                tmb.showwarning(title="INVALID MOVE", message=str(e).upper())
+        else:
+            tmb.showinfo("Not Your Turn", "Its not your turn to play")
+
+
+    def p2_mart(self, power: int = None, event=None):
+        """Responsible for making player2 to go to market (pick a card from the market)"""
+
+        if not self.get_player_turn('p2') or self.__check_gameover:
+            return
+
+        if power:
+            if power == 2:
+                self._check2 += 1
+            elif power == 1:
+                self._check1 += 1
+
+        for o, i in enumerate(self._btn_reference):
+            if i:
+                continue
+            self._player2.gomart()
+            self._btn_reference[o].append(self._player2.cards()[-1])
+            new_btn = self._player2_btns.get(o)
+
+            if event: #When we hit ENTER <RETURN>
+                self._market_btn.config(relief='sunken')
+                self._root.after(100, lambda: self._market_btn.config(relief='raised'))
+
+            new_btn.config(
+                image=self._player2.cards()[-1][0],
+                command=lambda: self.player2_play(
+                    self._btn_reference[o], 
+                    self._player2_btns[o]
+                )
+            )
+            self._root.after(200, self.insert_widget_at_first_column, new_btn)
+
+            if self._onlinePlayerActive:
+                self._onlineClient.send_data('MARKET', 'MART')
+            break
+
+        self.display_number_of_cards('player2')
+        self.set_player_turn('comp' if not self._onlinePlayerActive else 'op')
+        self.repopulate_containers()
+
+        if self._check2 == 1:
+            self._root.title(f'{self._title} - PICK TWO')
+        elif self._check2 == 0 or not self._check2:
+            self._root.title(self._title)
+            self._root.after(self.COMP_PLAY_DELAY, self.compPlayEngine)
+        else:
+            self._root.title(self._title)
+            self._root.after(self.COMP_PLAY_DELAY, self.compPlayEngine)
+
+    def check_p2_picked_two_cards(self, player='comp', event=None):
+        """Checks whether player2 clicked the mart button twice (in other words, checks whether player2 has
+        picked two cards) and then unfreezes player2 cards (buttons) - for PICK TWO"""
+
+        player = 'comp' if not self._onlinePlayerActive else 'op'
+        self.p2_mart(power=2, event=event)
+        self.set_player_turn('p2')
+        self._root.title(f'{self._title} - PICK TWO')
+
+        if self._check2 == 2:  # Done picking two cards
+            self.set_player_turn(player)
+            [btn.config(state='normal') for btn in self._depot_p2_btns]
+            self._check2 = 0
+            self._market_btn.configure(command=self.p2_mart)
+            self.bind_return(method='mart')
+            self._root.title(self._title)
+
+    def check_p2_picked_a_card(self, player='comp', event=None):
+        """Checks whether player2 clicked the mart button once (in other words, checks whether player2 has
+        picked one card) and then unfreezes player2 cards (buttons) - for GENERAL MARKET"""
+        player = 'comp' if not self._onlinePlayerActive else 'op'
+        self.p2_mart(power=1, event=event)
+        if self._check1 == 1:
+            self.set_player_turn(player)
+            [btn.config(state='normal') for btn in self._depot_p2_btns]
+            self._check1 = 0
+            self._market_btn.configure(command=self.p2_mart)
+            self.bind_return(method='mart')
+
+    def p2_request_card_with_20(self, card: list[tuple[tk.PhotoImage, tuple[str, int]]]):
+        """Player2 (actual player) demands a particular card from computer after playing whot 20"""
+
+        if len(self._player2.cards()) == 0 or not card[0][1][1] == 20:
+            return
+
+        self.set_player_turn('p2')
+
+        card_root = ctk.CTkToplevel(self._root)
+        card_root.transient(self._root)
+        x, y = self._root.winfo_x(), self._root.winfo_y()
+        card_root.geometry(f'230x480+{x}+{y}')
+        card_root.title("Ask for a card")
+        card_root.resizable(False, False)
+
+        label_theme = self.get_actual_theme(for_text=True)
+        button_theme = self._themes_dict.get(self._theme_var.get())
+
+        command = lambda card_name, toplev: self._p2_clicked_card(card_name, toplev)
+
+        card_buttons = [
+            ('Cross', self._cross_icon),
+            ('Circle', self._circle_icon),
+            ('Star', self._star_icon),
+            ('Triangle', self._triangle_icon),
+            ('Square', self._square_icon)
+        ]
+
+        for i, (card_name, icon) in enumerate(card_buttons):
+            button = tk.Button(
+                card_root, 
+                image=icon, 
+                command=lambda i=i: command(card_buttons[i][0], card_root),
+                bg=button_theme)
+            button.grid(row=i, column=0, pady=3, padx=15)
+            ctk.CTkLabel(
+                card_root, 
+                text=card_name, 
+                text_color=label_theme,
+                font=self.smaller_font
+            ).grid(row=i, column=1)
+
+        ctk.CTkLabel(
+            card_root, 
+            text='Choose Desired Card', 
+            text_color=label_theme,
+            font=self.font_style
+        ).place(relx=0.13, rely=0.896)
+
+        card_root.protocol('WM_DELETE_WINDOW', lambda: self._p2_clicked_card(None, card_root))
+        card_root.focus_set()
+        card_root.grab_set()
+
+    def _p2_clicked_card(self, card: str, window: ctk.CTkToplevel):
+        """Registers player2's Desired card and calls player1 (computer or OP) to respond to the request"""
+        window.destroy()
+        [btn.config(state='normal') for btn in self._depot_p2_btns]
+        self._market_btn.configure(state='normal')
+        window.grab_release()
+
+        player = 'comp' if not self._onlinePlayerActive else 'op'
+        self.set_player_turn(player)
+        if not card:
+            self._root.after(500, self.compPlayEngine)
+            return
+        
+        if not self._onlinePlayerActive:
+            self._whot.requests['player2'] = card
+            # TODO
+            self._player2.requested_card = card
+            self._root.after(500, self.computer_response_to_card_20)
+        else:
+            self._onlineClient.send_data(card, data_type='REQUEST')
+
+
+    #----------------------------------------------------------------------------------------
+    # MULTIPLAYER
+    #----------------------------------------------------------------------------------------
+    def create_multiplayer_indicators(self):
+        self._other_client_connected = False
+        self._multiplayer_switch_var = tk.BooleanVar(value=True)
+        self._multiplayer_switch = ctk.CTkSwitch(
+            self._root,
+            height=21,
+            text='On/Off',
+            font=self.smaller_font,
+            onvalue=True,
+            offvalue=False,
+            variable=self._multiplayer_switch_var,
+            command=self.terminate_multiplayer
+        )
+        self._multiplayer_switch.place(relx=0.414, rely=0.954)
+        self._multiplayer_indicator = ctk.CTkLabel(
+            self._root,
+            height=21,
+            width=84,
+            text='Waiting...',
+            font=self.smaller_font,
+            text_color=self.get_actual_theme(for_text=True),
+        )
+        self._multiplayer_indicator.place(relx=0.559, rely=0.954)
     
     def update_multiplayer_indicators(self):
         self._multiplayer_switch_var.set(True)
@@ -1383,8 +1644,10 @@ class Whot(images):
                 self.__restart(force=True)
             else:
                 self._multiplayer_switch_var.set(True)
+    
+    def generate_shuffle_seed(self):
+        return int.from_bytes(os.urandom(4), 'big')
                 
-
     def start_multiplayer_server_client(self, event=None):
         if self._delay_multiplayer_for_animations:
             self.popup_message(
@@ -1407,14 +1670,13 @@ class Whot(images):
             return
         host, port, nickname, server_choice = multiplayer
         self._server_choice = server_choice
-        print('setting root title -->', self._title)
         self._title += ' - MULTIPLAYER'
         self._root.title(self._title)
 
         if server_choice == 'start server':
-            self.start_init_server_thread(host, port)
+            self.start_mp_server_or_client_thread(self.init_server, host, port)
             seed = self.generate_shuffle_seed()
-            self.start_init_client_thread(host, port)
+            self.start_mp_server_or_client_thread(self.init_client, host, port)
             try:
                 player_turn = self.reinitialize_cards(onlinePlayer=True, shuffle_seed=seed, conn_type='server')
                 player_turn = 'op' if player_turn == 'p2' else 'p2'
@@ -1432,8 +1694,8 @@ class Whot(images):
 
         else:  # choice -> 'join server'
             self._onlinePlayerActive = True
-            self.start_init_client_thread(host, port)
-            init_d_queue = queue.Queue() #TODO: Implement
+            self.start_mp_server_or_client_thread(self.init_client, host, port)
+            init_d_queue = queue.Queue() #TODO: Implement init_d_queue.get(block=True, timeout=10)
             init_data = self.get_init_data_from_server(init_d_queue)
             seed = init_data['seed']
             player_turn = init_data['player_turn']
@@ -1445,7 +1707,7 @@ class Whot(images):
                 self.update_multiplayer_indicators()
 
         if not self._connectionFailed:
-            self.start_listen_for_onlineP_card_thread()
+            self.start_onlineplayer_listener_thread()
         else:
             ic('connection failed')
             self._title = 'Whot Game'
@@ -1552,21 +1814,16 @@ class Whot(images):
 
         return return_value
 
-    def start_init_server_thread(self, host, port):
-        print('server host and port -->', host, port)
-        init_server_thread = threading.Thread(target=self.init_server, args=(host, port))
-        init_server_thread.start()
+    def start_mp_server_or_client_thread(self, target: Callable, host: str, port: int):
+        print(f'{target} host and port -->', host, port)
+        init_thread = threading.Thread(target=target, args=(host, port))
+        init_thread.start()
 
-    def start_init_client_thread(self, host, port):
-        print('client host and port -->', host, port)
-        init_client_thread = threading.Thread(target=self.init_client, args=(host, port))
-        init_client_thread.start()
-
-    def start_listen_for_onlineP_card_thread(self):
+    def start_onlineplayer_listener_thread(self):
         listen_op_thread = threading.Thread(target=self.onlineplayer_listener)
         listen_op_thread.start()
 
-    def init_server(self, host=None, port=None):
+    def init_server(self, host: str, port: int):
         try:
             server = socketServer.Server(host, port)
         except (ConnectionRefusedError, OSError) as e:
@@ -1575,9 +1832,9 @@ class Whot(images):
         else:
             self._onlineServer = server
             print('server -->', self._onlineServer)
-            return server
+            return server #TODO: Implement a queue object and put this server, idek why yet...
 
-    def init_client(self, host=None, port=None):
+    def init_client(self, host: str, port: int):
         try:
             nickname = self._config['multiplayer']['nickname']
             client = socketClient.Client(host, port, nickname)
@@ -1591,11 +1848,6 @@ class Whot(images):
 
     def wait_for_client_to_connect(self, sleep_duration=1) -> bool:
         """
-        Waits for a client to connect to the server.
-
-        Args:
-            sleep_duration (float): The duration in seconds to sleep between checks for a client connection.
-        
         Returns:
             bool: True if a client successfully connects, False otherwise.
         """
@@ -1619,6 +1871,9 @@ class Whot(images):
         return client_init_data
 
 
+    #------------------------------------------------------------------------------------
+    # ONLINEPLAYER
+    #------------------------------------------------------------------------------------
     def onlineplayer_listener(self):
         self.wait_for_client_to_connect(2.5)
 
@@ -1636,7 +1891,7 @@ class Whot(images):
                 self._onlineClient.client_data['conn_nickname'] = None
                 self.update_multiplayer_indicators() # server_choice: start server
             
-            if other_client_alive is False: # Essentially only False
+            if other_client_alive is False: 
                 tmb.showerror("CLIENT ERROR", f"{self._onlineNickname or 'OnlinePlayer'} Disconnected!")
                 self.__restart(force=True)
 
@@ -1662,8 +1917,8 @@ class Whot(images):
         print('finding card...')
         index = None
         for i, sublist in enumerate(self._label_reference):
-            for j, item in enumerate(sublist):
-                if item[1] == card:  # item[1] - ('Square', 2)
+            for j, carditem in enumerate(sublist):
+                if carditem[1] == card:  # item[1] - ('Square', 2)
                     index = i
                     print(f"Index of {card}: ({i}, {j})")
                     break
@@ -1719,33 +1974,32 @@ class Whot(images):
             ic('HOLD On prev enabled, Continuing', self._server_choice)
             self._onlinep_todo['hold_on'] = False
             self.set_player_turn('op')
-            self.continue_from_hold_or_suspension()
+            self.op_continue_from_hold_or_suspension()
         elif not card and self._onlinep_todo['hold_on']: #For mart
             self._onlinep_todo['hold_on'] = False
             self.set_player_turn('op')
-            self.continue_from_hold_or_suspension()
+            self.op_continue_from_hold_or_suspension()
         
         if card and card[1][1] != 8 and self._onlinep_todo['suspension']:
             ic('SUSPENSIOn prev enabled, Continuing', self._server_choice)
             self._onlinep_todo['suspension'] = False
             self.set_player_turn('op')
-            self.continue_from_hold_or_suspension()
+            self.op_continue_from_hold_or_suspension()
         elif not card and self._onlinep_todo['suspension']:
             self._onlinep_todo['suspension'] = False
             self.set_player_turn('op')
-            self.continue_from_hold_or_suspension()
+            self.op_continue_from_hold_or_suspension()
 
         if card and card[1][1] == 20:
             self.set_player_turn('op')
 
         if not any(self._onlinep_todo.values()):
             self.set_player_turn('p2')
+    
+    def op_continue_from_hold_or_suspension(self):
+        self.popup_message('Continue', 'Continue', 400)
             
-
     def onlinep_request_card_with_20(self, request: str):
-        # TODO: Make it such that the requested card is the only accepted card to be
-        # TODO: played after the request (by one recursion) then market if card unavailable
-
         client_data = self._onlineClient.client_data
 
         if len(self._onlinep.cards()) == 0:
@@ -1791,15 +2045,16 @@ class Whot(images):
                 if card[1][1] == 20:
                     print('\nOP CARD IS 20, SETTING OP TO PLAY AGAIN')
                     self.set_player_turn('op')
-                # else:
-                #     self.set_player_turn('p2')
 
                 self.gameover()
 
             else:  # Rare Happening
                 raise Main.WhotException('OnlinePlayer Played Invalid Card')
+            
 
-    ##################################################################################################
+    #---------------------------------------------------------------------------------------------------
+    # COMPUTER
+    #---------------------------------------------------------------------------------------------------
     def apply_difficulty(self):
         """Applies Chosen Difficulty To The Game And Goes To Market"""
 
@@ -1825,162 +2080,6 @@ class Whot(images):
         else:
             self.comp_mart()
 
-    def pick_two(self, player: Literal['comp', 'p2', 'op']):
-        """Makes Player Pick two cards from the mart"""
-
-        if player == 'comp':
-            if self._player2.powerup_cards[2]:
-                self.set_player_turn('comp')
-
-                def comp_pick_two_animation(count: int):
-                    if count < 2:
-                        self.set_player_turn('comp')
-                        self.apply_difficulty()
-                        self._root.after(self.COMP_PLAY_DELAY, comp_pick_two_animation, count + 1)
-
-                comp_pick_two_animation(0)
-
-                self._player2.powerup_cards[2] = False
-                self.set_player_turn('p2')
-            return
-
-        elif player == 'op':  # OP
-            if self._player2.powerup_cards[2]:
-                self.set_player_turn('op')
-                self._onlinep_todo['pick_two'] = 2
-                self._player2.powerup_cards[2] = False
-                return
-
-        elif player == 'p2':
-            if self._onlinePlayerActive:
-                powerup = self._onlinep.powerup_cards
-            else:
-                powerup = self._computer.powerup_cards
-
-            if powerup[2]:
-                print('\nPICK TWO')
-                self.popup_message("Pick Two", "Pick two cards from the mart")
-                self._root.title(f'{self._title} - PICK TWO')
-                [btn.config(state='disabled') for btn in self._depot_p2_btns]
-                self._market_btn.configure(command=self.check_p2_picked_two_cards)
-                self.bind_return(method='pick_two')
-                powerup[2] = False
-
-    def go_gen_mart(self, player: Literal['p2', 'comp', 'op']):
-        """Makes Player go to general market"""
-
-        if player == 'comp':
-            if self.get_player_turn('comp'):
-                if self._player2.powerup_cards[14]:
-                    print("Computer Going to gen mart")
-
-                    self.apply_difficulty()
-
-                    self._player2.powerup_cards[14] = False
-                    self.set_player_turn('p2')
-            return
-
-        elif player == 'op':
-            logging.debug(f'GENERAL MARKET - {player}')
-            if self._player2.powerup_cards[14]:
-                self.set_player_turn('op')
-                self._onlinep_todo['general_market'] = 1
-                self._player2.powerup_cards[14] = False
-                return
-
-        elif player == 'p2':
-            if self._onlinePlayerActive:
-                powerup = self._onlinep.powerup_cards
-            else:
-                powerup = self._computer.powerup_cards
-
-            if powerup[14]:
-                logging.debug(f'GENERAL MARKET - {player}')
-                self.popup_message("General Market", "General Market")
-                self._root.title(f'{self._title} - GENERAL MARKET')
-                [btn.config(state='disabled') for btn in self._depot_p2_btns]
-                self._market_btn.configure(command=self.check_p2_picked_a_card)
-                self.bind_return(method='pick_one')
-                powerup[14] = False
-
-    def hold_on(self, player: Literal['p2', 'comp', 'op']):
-        """Makes Player to hold on until the other player plays another card or goes to the mart,
-        after playing a card with number 1 in it"""
-
-        if player == 'comp':
-            if self._player2.powerup_cards[1]:
-                self.set_player_turn('p2')
-                self._player2.powerup_cards[1] = False
-            return
-
-        elif player == 'op':
-            logging.debug(f'HOLD ON - {player}')
-            if self._player2.powerup_cards[1]:
-                self.set_player_turn('p2')
-                # Actual hold on handled in the recv end (self.handle_onlinep_todo)
-                self._player2.powerup_cards[1] = False
-                return
-
-        elif player == 'p2':
-            if self._onlinePlayerActive:
-                powerup = self._onlinep.powerup_cards
-            else:
-                powerup = self._computer.powerup_cards
-
-            if powerup[1]:
-                logging.debug(f'HOLD ON - {player}')
-                self.popup_message("Hold On", "Hold On")
-                self._root.title(f'{self._title} - HOLD ON')
-                powerup[1] = False
-                self.gameover()
-                if not self._onlinePlayerActive:
-                    self._root.after(self.COMP_PLAY_DELAY, lambda: self.comp_card_streak(1))
-                else:
-                    self.set_player_turn('op')
-
-            # self.set_player_turn('comp')
-
-    def suspension(self, player: Literal['p2', 'comp', 'op']):
-        """Just like hold on, it suspends the other player until they play
-          another card or go to mart"""
-
-        if player == 'comp':
-            if self._player2.powerup_cards[8]:
-                self.set_player_turn('p2')
-                self._player2.powerup_cards[8] = False
-            return
-
-        elif player == 'op':
-            logging.debug(f'SUSPENSION - {player}')
-            if self._player2.powerup_cards[8]:
-                self.set_player_turn('p2')
-                # Actual suspension handled in the recv end (self.handle_onlinep_todo)
-                self._player2.powerup_cards[8] = False
-                return
-
-        elif player == 'p2':
-            if self._onlinePlayerActive:
-                powerup = self._onlinep.powerup_cards
-            else:
-                powerup = self._computer.powerup_cards
-            if powerup[8]:
-                logging.debug(f'SUSPENSION - {player}')
-                self.popup_message("Hold On", "Suspension")
-                self._root.title(f'{self._title} - SUSPENSION')
-
-                powerup[8] = False
-                self.gameover()
-
-                if not self._onlinePlayerActive:
-                    self._root.after(500, lambda: self.comp_card_streak(8))
-                else:
-                    self.set_player_turn('op')
-            # self.set_player_turn('p2')
-
-    def continue_from_hold_or_suspension(self):
-        self.popup_message('Continue', 'Continue', 400)
-
-    ##################################################################################################
 
     def computer_play(
             self,
@@ -2240,96 +2339,6 @@ class Whot(images):
             logging.debug("computer doesnt have the card going to mart")
             self.apply_difficulty()  # * The mart func will also clear p2 request
 
-    def Manual(self, event=None):
-        """See the Manual of the Game"""
-        root = self.create_toplevel_at_center(width=650, height=420)
-        root.title("<Manual>")
-        root.transient(self._root)
-        root.resizable(False, False)
-
-        theme = self.get_actual_theme(for_text=True)
-        text_box = ctk.CTkTextbox(
-            root, 
-            width=650,
-            height=420,
-            wrap='word',
-            font=self.font_style,
-            text_color=theme
-        )
-        text_box.insert(tk.INSERT, manual)
-        text_box.configure(state='disabled')
-        text_box.focus_set()
-        text_box.grab_set()
-        text_box.place(relx=0.0, rely=0.0, relheight=1.0, relwidth=1.0)
-
-    def gameover(self):
-        """Freezes all buttons and stops the computer | player2 | onlinep from playing 
-        if any player's cards finish"""
-        
-        player2_cards = len(self._player2.cards())
-        other_player_cards = len(self._onlinep.cards()) if self._onlinePlayerActive else len(self._computer.cards())        
-        
-        if player2_cards != 0 and other_player_cards != 0:
-            return
-        
-        self.__check_p2_played = True
-        self.__checkcomp_played = True
-        self.__check_gameover = True
-        self._root.unbind("<Return>")
-        
-        if not player2_cards:
-            tmb.showinfo("Game Over", "You Are The Winner")
-        elif not other_player_cards:
-            if self._onlinePlayerActive:
-                tmb.showinfo("Game Over", f"{self._onlineNickname or 'OnlinePlayer'} Is The Winner")
-            else:
-                tmb.showinfo("Game Over", "The Computer Is The Winner")
-        
-        for btn in self._depot_p2_btns:
-            btn.configure(state='disabled')
-        self._market_btn.configure(state='disabled')
-        self._root.title(f'{self._title} - Game Over')
-        self._root.after(200, self.__restart)
-
-
-    def __restart(self, force=False):
-        """Restart the Whot Game"""
-
-        if self._onlinePlayerActive:
-            if self._server_choice == 'start server':
-                self._onlineServer.shutdown()
-            self._onlineClient.shutdown()
-
-        if not force:
-            ask = tmb.askyesnocancel("Restart Game", "Do you want to restart the game?")
-            if ask:
-                self.reinitialize_cards(onlinePlayer=False)
-            elif ask is None:
-                pass
-            else:
-                self.__exit()
-        else:
-            self.reinitialize_cards(onlinePlayer=False, prev_onlinep=True)
-
-    def __exit(self):
-        if self._onlinePlayerActive:
-            self._onlinePlayerActive = False
-            if not self._connectionFailed:
-                if self._server_choice == 'start server':
-                    self._onlineServer.shutdown()
-                self._onlineClient.shutdown()
-
-        self._root.after(500, self._whot_threads)
-
-
-    def _whot_threads(self):
-        """Return Active Threads"""
-        self._root.quit()
-        self._root.destroy()
-
-        for thread in threading.enumerate():
-            print(f'thread name and is alive --> {[thread.name, thread.is_alive()]}')
-        return threading.enumerate()
 
     def _mainloop(self):
         """calls tk mainloop"""
