@@ -35,6 +35,13 @@ class Whot(images):
         Whot.Cards = self._DepotMarket.copy()
         shuffle(Whot.Cards)
 
+    def ResetRequests(self):
+        Whot.requests = {
+            'player2': None,
+            'computer': None,
+            'onlineplayer': None
+        }
+
     def NormCards(self):
         'Replace the last card if it has a powerup in it'
 
@@ -197,12 +204,11 @@ class Player2(Whot):
                 else:
                     self.requests['onlineplayer'] = None
                     self.requests['computer'] = None
-
-            if self.requested_card and playcard[1][0] != self.requested_card:
+            if mart:
+                self.requested_card = None
+            if self.requested_card and playcard[1][0] != self.requested_card: #!TODO: Fix this
                 raise WhotException(f"Nigga Play The Card You Just Requested Hint: {self.requested_card}!")
             else:
-                self.requested_card = None
-            if mart:
                 self.requested_card = None
         else:
             self.requests['onlineplayer'] = None
