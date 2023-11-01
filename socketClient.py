@@ -1,6 +1,6 @@
 import socket, threading
 from typing import Literal, Union
-import pickle, json
+import json
 
 
 class Client:
@@ -9,7 +9,6 @@ class Client:
             address: Union[str, Literal['localhost', '127.0.0.1']], 
             port: int, 
             nickname = '',
-            using_whot=False
         ):
         
         self.address = address
@@ -20,8 +19,9 @@ class Client:
         self.client.connect((self.address, self.port))
 
         self._client_is_alive = True
+        self._other_client_alive = True
 
-        self.client_data: dict[str, tuple|int|str|bool|list|None] = {
+        self.client_data: dict[Union[tuple[str, int], int, str, bool, list]] = {
             'card': None, # tuple[str, int] 
             'seed': None, # int
             'player_turn': None,
@@ -29,10 +29,10 @@ class Client:
             'conn_nickname': '',
             'request': '',
             'mart': False,
-            'continue': False
+            # 'continue': False
         }
 
-        self.client_init_data = {
+        self.client_init_data: dict[str, Union[int, str, None]] = {
             'seed': None,
             'player_turn': '',
             'nickname': ''
@@ -41,12 +41,8 @@ class Client:
         self._connection_exceptions = (
             socket.timeout,
             ConnectionResetError,
-            ConnectionAbortedError
-)
-        self._input_exceptions = (
-            KeyboardInterrupt,
+            ConnectionAbortedError,
             OSError,
-            EOFError
         )
 
         self.send_nickname()
@@ -72,8 +68,7 @@ class Client:
 
             except self._connection_exceptions as e:
                 print(f"An error occured! {e}")
-                self.client.close()
-                self._client_is_alive = False
+                self.shutdown()
                 break
         else:
             print('Were disconnected...')
@@ -88,7 +83,10 @@ class Client:
         '{MART}': lambda _: self.client_data.__setitem__('mart', True),
         '{REQUEST}': lambda d: self.client_data.__setitem__('request', d),
         '{NICKNAME}': lambda d: self.client_data.__setitem__('conn_nickname', d),
-        '{CONTINUE}': lambda _: self.client_data.__setitem__('continue', True),
+        # '{CONTINUE}': lambda _: self.client_data.__setitem__('continue', True),
+        '{CLIENT_JOINED}': lambda _: setattr(self, '_other_client_alive', True),
+        '{OTHER_CLIENT_EXIT}': lambda _: setattr(self, '_other_client_alive', False),
+        '{SERVER_SHUTDOWN}': lambda _: setattr(self, '_other_client_alive', False),
     }
 
         for prefix, action in message_map.items():
@@ -118,8 +116,11 @@ class Client:
 
     
     def shutdown(self):
-        self._client_is_alive = False
-        self.client.close()
+        try:
+            self._client_is_alive = False
+            self.client.close()
+        except self._connection_exceptions as e:
+            print(f"An error occured! {e}")
 
         
 
