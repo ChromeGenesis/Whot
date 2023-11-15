@@ -3,12 +3,13 @@ import tkthread
 tkthread.patch()
 import tkinter as tk
 import customtkinter as ctk
+import CTkMessagebox
+import customMenu
 from manual import manual
 from GameImages import images
 import Main
 import multiplayer
 from random import choice
-import CTkMessagebox
 import time, threading, queue, os
 import json
 from typing import Literal, Callable
@@ -116,141 +117,76 @@ class Whot(images):
         self._p2_picked_1_card_count = 0
 
         self.COMP_PLAY_DELAY = 500
+        self.INITIAL_COMP_PLAY_DELAY = 4700
         self.initialize_card_graphics()
 
         #####################################################################################
         # Menu
         #####################################################################################
-        self._menu_bar = ctk.CTkFrame(self._root, cursor="hand2")
-        self._menu_bar.place(relx=0.0, rely=0.0, relwidth=1.003)
+        Menu = customMenu.Menu(self._root)
 
         gear_img = tk.PhotoImage(file="gear_small.png", height=30, width=30)
 
-        about_menu = tk.Menubutton(
-            self._menu_bar,
-            text="About",
-            bg="#252526",
-            fg="white",
-            activebackground="#252526",
-        )
-        about_menu.menu = tk.Menu(
-            about_menu,
-            tearoff=0,
-            bg="#252526",
-            fg="white",
-        )
-        about_menu.menu.add_command(
+        about_menu = Menu.menu_bar(text="About", tearoff=0)
+        about_menu.add_command(
             label="Manual", accelerator="Ctrl+M", compound="left", command=self.Manual
         )
-        about_menu["menu"] = about_menu.menu
-        about_menu.pack(side="left")
 
-        game_menu = tk.Menubutton(
-            self._menu_bar,
-            text="Game",
-            bg="#252526",
-            fg="white",
-            activebackground="#252526",
-        )
-        game_menu.menu = tk.Menu(game_menu, tearoff=0, bg="#252526", fg="white")
-        game_menu.menu.add_command(
+        game_menu = Menu.menu_bar(text="Game", tearoff=0)
+        game_menu.add_command(
             label="Restart Game",
             accelerator="Ctrl+R",
             compound="left",
             command=self.__restart,
         )
-        game_menu["menu"] = game_menu.menu
-        game_menu.pack(side="left")
 
-        settings_menu = tk.Menubutton(
-            self._menu_bar,
-            text="Setting",
-            bg="#252526",
-            fg="white",
-            activebackground="#252526",
-        )
-        settings_menu.menu = tk.Menu(settings_menu, tearoff=0, bg="#252526", fg="white")
-        settings_menu.menu.add_command(
+        settings_menu = Menu.menu_bar(text="Setting", tearoff=0)
+        settings_menu.add_command(
             label="Settings",
             accelerator="Ctrl+S",
             compound="left",
             command=self.settings,
         )
-        settings_menu["menu"] = settings_menu.menu
-        settings_menu.pack(side="left")
 
-        multiplayer_menu = tk.Menubutton(
-            self._menu_bar,
-            text="Multiplayer",
-            bg="#252526",
-            fg="white",
-            activebackground="#252526",
-        )
-        multiplayer_menu.menu = tk.Menu(
-            multiplayer_menu, tearoff=0, bg="#252526", fg="white"
-        )
-        multiplayer_menu.menu.add_command(
+        multiplayer_menu = Menu.menu_bar(text="Multiplayer", tearoff=0)
+        multiplayer_menu.add_command(
             label="Multiplayer",
             accelerator="Ctrl+Shift+M",
             compound="left",
             command=self.start_multiplayer_server_client,
         )
-        multiplayer_menu["menu"] = multiplayer_menu.menu
-        multiplayer_menu.pack(side="left")
 
-        appearance_menu = tk.Menubutton(
-            self._menu_bar,
-            text="Appearance",
-            bg="#252526",
-            fg="white",
-            activebackground="#252526",
-        )
-        appearance_menu.menu = tk.Menu(
-            appearance_menu, tearoff=0, background="#252526", fg="white"
-        )
         self._appearance_var = tk.StringVar(value=self._config["appearance"])
-        appearance_menu.menu.add_radiobutton(
+        appearance_menu = Menu.menu_bar(text="Appearance", tearoff=0)
+        appearance_menu.add_radiobutton(
             label="Dark",
             variable=self._appearance_var,
             value="dark",
             command=self.set_appearance,
         )
-        appearance_menu.menu.add_radiobutton(
+        appearance_menu.add_radiobutton(
             label="light",
             variable=self._appearance_var,
             value="light",
             command=self.set_appearance,
         )
-        appearance_menu["menu"] = appearance_menu.menu
-        appearance_menu.pack(side="left")
-
-        self._menu_widgets = [
-            about_menu,
-            game_menu,
-            settings_menu,
-            multiplayer_menu,
-            appearance_menu,
-        ]
-        self.set_appearance()
         ctk.AppearanceModeTracker().add(self.set_appearance)
+        self.set_appearance()
         ################################################################################################################
         # Card Length Widgets
         ################################################################################################################
-        p2_card_length, comp_card_length = len(self._player2.cards()), len(
-            self._computer.cards()
-        )
         self._comp_cards_left = ctk.CTkLabel(
             self._root,
             height=38,
             width=270,
-            text=f"Number of computer cards: {comp_card_length}",
+            text=f"Number of computer cards: {len(self._computer.cards())}",
             font=self.font_style,
         )
         self._p2_cards_left = ctk.CTkLabel(
             self._root,
             height=38,
             width=230,
-            text=f"Number of your cards: {p2_card_length}",
+            text=f"Number of your cards: {len(self._player2.cards())}",
             font=self.font_style,
         )
         self._p2_cards_left.place(relx=0.0, rely=0.943)
@@ -269,12 +205,10 @@ class Whot(images):
         self._comp_turn_indicator.place(relx=0.778, rely=0.03)
 
         ####################################################################################
-        # Who Plays First and Turn Indicator
+        # Who Plays First and Name Entry Widget
         ####################################################################################
-        who_plays_first = ("player2", "computer")
-        final_choice = choice(who_plays_first)
-        self.set_player_turn("p2" if final_choice == "player2" else "comp")
-        print(f"choice is: {final_choice}")
+        who_plays_first = ("p2", "comp")
+        self.set_player_turn(choice(who_plays_first))
 
         self._name_entry = ctk.CTkEntry(self._root)  # Entry for self.set_name()
         ####################################################################################
@@ -317,7 +251,7 @@ class Whot(images):
             self._root.after(1500, self.settings)
         self._difficulty_var.set(self._config.get("mode"))
 
-        self._root.after(5800, self.compPlayEngine)
+        self._root.after(self.INITIAL_COMP_PLAY_DELAY, self.compPlayEngine)  # 5800
         self._root.after(
             1200,
             lambda: self.display_cards_animation(
@@ -491,27 +425,14 @@ class Whot(images):
         text_box.grab_set()
         text_box.place(relx=0.0, rely=0.0, relheight=1.0, relwidth=1.0)
 
-    def set_appearance(self, _: str = None):
-        theme = (
-            "#252526" if self._appearance_var.get() == "dark" else "#E9E9E9"
-        )  # "#E7E7E7"
-        text_color = "white" if theme == "#252526" else "black"
-
-        ctk.set_appearance_mode(self._appearance_var.get())
+    def set_appearance(self, theme_callback: str = None):
+        theme = "#252526" if self._appearance_var.get() == "dark" else "#E9E9E9"
+        ctk.set_appearance_mode(
+            (theme_callback.lower() if theme_callback else None)
+            or self._appearance_var.get()
+        )
         self._played_frame.configure(background=theme)
-
-        self._menu_bar.configure(fg_color=theme)
-        for menu in self._menu_widgets:
-            menu.configure(
-                bg=theme,
-                fg=text_color,
-                activebackground=theme,
-                activeforeground=text_color,
-            )
-            menu.menu.configure(bg=theme, fg=text_color)
-
         self._write_config("appearance", self._appearance_var.get())
-        return theme, text_color
 
     def gameover(self):
         """Freezes all buttons and stops the computer | player2 | onlinep from playing
@@ -570,6 +491,7 @@ class Whot(images):
                 option_1="Cancel",
                 option_2="No",
                 option_3="Restart",
+                option_focus=3,
             )
             if ask.get() == "Restart":
                 self.reinitialize_cards(onlinePlayer=False)
@@ -853,7 +775,7 @@ class Whot(images):
         ).pack(fill="both", expand=True)
 
         top.focus_set()
-        top.grab_set()
+        # top.grab_set()
         top.bell()  # TODO
         top.after(duration, top.destroy)
 
@@ -947,7 +869,7 @@ class Whot(images):
             self._comp_turn_indicator.configure(text_color="#000fff000")
 
         # since its op's turn, we'll use comp's widgets to display the turn indicator
-        elif op_turn and not p2_turn:
+        elif op_turn and not p2_turn and self._onlinePlayerActive:
             self._p2_turn_indicator.configure(text_color="red")
             self._comp_turn_indicator.configure(text_color="#000fff000")
 
@@ -1213,7 +1135,6 @@ class Whot(images):
         widget: tk.Button | tk.Label,
         from_above=True,
     ):
-        ic(widget.grid_info())
         widget.grid_forget()
 
         # Get the absolute position of the player frame
@@ -1329,7 +1250,6 @@ class Whot(images):
             for btn in self._player2_btns.values():
                 column = increment_column(btn.grid_info())
                 if column is not None:
-                    ic("p2", column)
                     btn.grid(row=0, column=column)
             widget.grid(row=0, column=0, padx=6, pady=6)
 
@@ -1342,7 +1262,6 @@ class Whot(images):
             for label in labels:
                 column = increment_column(label.grid_info())
                 if column is not None:
-                    ic("comp", column)
                     label.grid(row=0, column=column)
             widget.grid(row=0, column=0, padx=6, pady=6)
 
@@ -1393,15 +1312,17 @@ class Whot(images):
 
         self.__check_gameover = False
         self.initialize_card_graphics(onlinePlayer)
-        self._root.after(5000, self.compPlayEngine) if not onlinePlayer else None
+        self._root.after(
+            self.INITIAL_COMP_PLAY_DELAY, self.compPlayEngine
+        ) if not onlinePlayer else None
         self.display_cards_animation([self._player2_btns[i] for i in range(5)])
         self.display_number_of_cards("player2")
         self.display_number_of_cards("onlinep" if onlinePlayer else "computer")
         self.root_bindings()
 
         if not player_turn:
-            player_turn = "p2" if choice(("player2", "onlinep")) == "player2" else "op"
-        self.set_player_turn(player_turn)
+            next_player = ("p2", "comp" if not onlinePlayer else "op")
+        self.set_player_turn(choice(next_player))
         self.set_theme()
 
         return player_turn
@@ -1428,7 +1349,7 @@ class Whot(images):
 
         for i in range(5):
             self._btn_reference[i].append(player2_cards[i])
-            self._player2_btns[i].config(
+            self._player2_btns[i].configure(
                 image=player2_cards[i][0],
                 command=lambda i=i: self.player2_play(
                     self._btn_reference[i], self._player2_btns[i]
@@ -1482,7 +1403,6 @@ class Whot(images):
         self,
         card: list[tuple[tk.PhotoImage, tuple[str, int]]],
         card_display_btn: tk.Button,
-        event=None,
     ):
         """For player2 (actual player) to play their valid card"""
         if self.__check_gameover:
@@ -2167,9 +2087,9 @@ class Whot(images):
 
         print("in req with card 20, request -->", request)
         self._whot.requests["onlineplayer"] = request
-        self.message_box("Request", f"I NEED {request.upper()}")
         self._root.title(f"{self._title} - Request {request.upper()}")
         client_data["request"] = ""
+        self.message_box("Request", f"I NEED {request.upper()}")
 
     def onlinep_play(
         self, card: list[tuple[tk.PhotoImage, tuple[str, int]]], event=None
@@ -2483,7 +2403,6 @@ class Whot(images):
         logging.debug(
             f'found_viable_card for comp, setting self._whot.requests["computer"] to {found_viable_card}...'
         )
-        self.message_box("Request", f"I NEED {found_viable_card.upper()}")
         self._whot.requests["computer"] = found_viable_card
         self._root.title(f"{self._title} - Request {found_viable_card.upper()}")
 
@@ -2492,6 +2411,7 @@ class Whot(images):
             f"computer requested card idx: {self._computer.requested_card_idx}"
         )
         logging.debug(f"computer request and requests --> {self._whot.requests}")
+        self.message_box("Request", f"I NEED {found_viable_card.upper()}")
 
     def computer_response_to_card_20(self):
         """Generates the computer's appropriate response to the requested
