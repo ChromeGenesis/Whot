@@ -1270,10 +1270,8 @@ class Whot(images):
         # Get the dynamic pos to place the played image
         x2, y2 = self._playedcard_curr_xy
 
-        # Bounded fan: the pile stays put no matter how long the game runs
-        # (the old len/2 drift walked it across the table).
-        ox, oy = self._pile_offset(len(self._animated_images))
-        x2, y2 = x2 + ox, y2 + oy
+        cardstack_x_offset = len(self._animated_images) / 2
+        x2, y2 = x2 + cardstack_x_offset, y2
 
         card = played_canvas.create_image(x1, y1, image=playcard[0])
         self._animated_images.append((card, playcard[1]))
@@ -1290,16 +1288,6 @@ class Whot(images):
             player_canvas,
         )
 
-    @staticmethod
-    def _pile_offset(n: int) -> tuple[float, float]:
-        """Deterministic sub-card fan so the played pile reads as a stack.
-
-        Cycles every few cards: max spread 6px right, 3px down, wherever
-        in the game you are. Pure function of pile order, so resize,
-        retheme and replay all agree on every card's spot.
-        """
-        return ((n % 4) * 2.0, (n % 3) * 1.5)
-
     def animate_frame(
         self,
         frame: int,
@@ -1310,14 +1298,12 @@ class Whot(images):
         card: int,
         played_canvas: ctk.CTkCanvas,
         player_canvas: ctk.CTkCanvas,
-        NUM_FRAMES=36,
-        FRAME_DURATION=12,
+        NUM_FRAMES=50,
+        FRAME_DURATION=10,
     ):
         if frame < NUM_FRAMES:
-            # Linear glide: fixed step per frame. (The old
-            # (remaining/N)*5 step arrived in ~2 frames then crawled.)
-            dx = (target_x - x) / NUM_FRAMES
-            dy = (target_y - y) / NUM_FRAMES
+            dx = (target_x - x) / NUM_FRAMES * 5
+            dy = (target_y - y) / NUM_FRAMES * 5
             played_canvas.coords(card, x, y)
             x += dx
             y += dy
@@ -1346,9 +1332,8 @@ class Whot(images):
 
         x, y = 0.69 * event.width - X_OFFSET, 0.55 * event.height
 
-        for idx, (img, _key) in enumerate(self._animated_images):
-            ox, oy = self._pile_offset(idx)
-            self._played_frame.coords(img, x + ox, y + oy)
+        for img, _key in self._animated_images:
+            self._played_frame.coords(img, x, y)
         self._playedcard_curr_xy = x, y
 
     def animate_widget_clicked(self, widget: tk.Button | tk.Label):
