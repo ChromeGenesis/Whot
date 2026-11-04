@@ -1,6 +1,3 @@
-import tkthread
-
-tkthread.patch()
 import tkinter as tk
 import customtkinter as ctk
 import CTkMessagebox
@@ -13,7 +10,6 @@ from random import choice
 import time, threading, queue, os
 import json
 from typing import Literal, Callable
-from icecream import ic
 import logging
 
 # logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s\n', filename='whot.log')#, datefmt='%H:%M:%S')
@@ -40,15 +36,13 @@ class Whot(images):
         self._config_location = "./config.json"
         self._config: dict[str, str | bool | dict[str, str | int]] = {}
         self.load_config_file()
-        # Theme our own card art to the appearance setting before the engine
-        # copies image references in InitDepot(). Art is vector-authored in
-        # assets/svg/ and pre-rendered to DIY/ + DIY-dark/ (see
-        # assets/render_cards.py), so this just picks the matching tree.
+        # Card faces are drawn from the single vector spec in CardArt.py
+        # (master SVG frame + Pillow in-memory raster, see
+        # assets/build_cards_svg.py), so this just picks the theme palette.
         self.apply_theme(self._config.get("appearance", "dark") == "dark")
 
         self._playedcard_curr_xy: tuple[float, float] = (0, 0)
-        self._animated_images: list[int] = []
-        self._animated_img_rectangles: list[int] = []
+        self._animated_images: list[tuple[int, tuple[str, int]]] = []
 
         self._player2_frame = ctk.CTkScrollableFrame(
             self._root,
@@ -95,6 +89,11 @@ class Whot(images):
         self._server_choice = ""
         self._onlineNickname = ""
         self._connectionFailed = False
+
+        # Async handshake state: workers never touch Tk, they just post a
+        # result here; the main-thread watchdog (_mp_watch) runs it.
+        self._mp_result = None
+        self._mp_handshake_active = False
 
         self._onlinep_todo: dict[str, int | bool] = {
             "pick_two": 0,
@@ -440,14 +439,11 @@ class Whot(images):
         )
         self._played_frame.configure(background=theme)
         self._write_config("appearance", self._appearance_var.get())
-        # Card faces are themed at load; a mid-game appearance flip needs a
-        # restart to retheme them (theme_callback set = tracker echo, skip).
+        # Card faces retheme live now -- no restart needed.
         if theme_callback is None and (
             (self._appearance_var.get() == "dark") != images.cards_dark
         ):
-            self.popup_message(
-                "Card Theme", "Restart the game to retheme the cards", 1500
-            )
+            self.retheme_cards(self._appearance_var.get() == "dark")
 
     def gameover(self):
         """Freezes all buttons and stops the computer | player2 | onlinep from playing
@@ -666,7 +662,10 @@ class Whot(images):
             return
         if toplevel.state() == "withdrawn":
             toplevel.deiconify()
-        self._root.after(10, self.redraw_window_if_still_withdrawn, toplevel)
+            # Only keep polling while it is still hidden; the old version
+            # rescheduled unconditionally, i.e. a 100Hz busy-loop forever
+            # per dialog created.
+            self._root.after(10, self.redraw_window_if_still_withdrawn, toplevel)
 
     def get_actual_theme(self, for_text=False) -> str | tuple[str, str]:
         """
@@ -734,6 +733,18 @@ class Whot(images):
             self._theme_var.set(prev_theme)
             self.set_theme()
 
+    def _card_base_bg(self) -> str:
+        """Neutral backdrop behind the transparent card corners.
+
+        Must match the appearance background (see set_appearance), never
+        the accent theme color, or it bleeds through the corners. Also
+        used as the button press color so clicks don't flash white.
+        """
+        return (
+            "#252526" if self._config.get("appearance", "dark") == "dark"
+            else "#E9E9E9"
+        )
+
     def set_theme(self):
         preferred_depot_labels = (
             self._depot_onlinep_labels
@@ -749,12 +760,17 @@ class Whot(images):
         theme_color = self.get_actual_theme()
 
         try:
-            # self._root.option_add("*foreground", theme_color)
+            # Card widgets sit directly behind the transparent card corners,
+            # so they take the neutral appearance background. The accent
+            # theme color would bleed through the corners (it stays on
+            # text accents only).
+            appearance_bg = self._card_base_bg()
             for btn_lab in preferred_depot_labels + self._depot_p2_btns:
-                btn_lab.configure(bg=theme_color)
-
-            self.create_playedcard_image(from_theme=True)
-            self._market_btn.configure(bg=theme_color)
+                btn_lab.configure(bg=appearance_bg)
+                if isinstance(btn_lab, tk.Button):
+                    btn_lab.configure(activebackground=appearance_bg)
+            self._market_btn.configure(bg=appearance_bg,
+                                       activebackground=appearance_bg)
             self._comp_cards_left.configure(text_color=theme_color)
             self._p2_cards_left.configure(text_color=theme_color)
 
@@ -766,6 +782,76 @@ class Whot(images):
             self._name_entry.configure(text_color=text_theme_color)
         except tk.TclError as e:
             print(e)
+
+    def retheme_cards(self, dark: bool):
+        """Rebuild card art for an appearance flip without restarting.
+
+        Swaps the PhotoImage inside every live pile (depot, both hands,
+        played cards, widget references) by (suit, number) key, then
+        refreshes all card widgets and played-canvas items. Game logic
+        only ever compares the (suit, number) half of each tuple, so
+        play validity is untouched.
+        """
+        if dark == images.cards_dark:
+            return
+        piles = [Main.Whot.Cards, self._whot.PlayedCards()]
+        for name in ("card1", "card2"):
+            hand = getattr(Main, name, None)
+            if hand is not None:
+                piles.append(hand)
+
+        old_whots = [photo for pile in piles for photo, key in pile
+                     if key[0] == "Whot"]
+
+        self.apply_theme(dark)  # rebuilds _DepotMarket/icons/backs, sets flag
+
+        new_by_key = {}
+        new_whots = []
+        for photo, key in self._DepotMarket:
+            if key[0] == "Whot":
+                new_whots.append(photo)
+            else:
+                new_by_key[key] = photo
+        whot_map = dict(zip([id(p) for p in old_whots], new_whots))
+
+        def swap(card):
+            photo, key = card
+            if key[0] == "Whot":
+                return (whot_map.get(id(photo), photo), key)
+            return (new_by_key.get(key, photo), key)
+
+        for pile in piles:
+            pile[:] = [swap(card) for card in pile]
+        for ref in self._btn_reference + self._label_reference:
+            ref[:] = [swap(card) for card in ref]
+
+        appearance_bg = self._card_base_bg()
+        for i, ref in enumerate(self._btn_reference):
+            if i not in self._player2_btns:
+                continue
+            btn = self._player2_btns[i]
+            # Backdrop first: empty slots keep no image, but their
+            # corners must already match or the next card dealt here
+            # arrives with stale-theme corners.
+            btn.configure(bg=appearance_bg, activebackground=appearance_bg)
+            if ref:
+                btn.configure(image=ref[0][0])
+        for attr in ("_computer_labels", "_onlinep_labels"):
+            for lab in getattr(self, attr, {}).values():
+                lab.configure(image=self._misc_whot1, bg=appearance_bg)
+        self._market_btn.configure(image=self._misc_whot, bg=appearance_bg,
+                                   activebackground=appearance_bg)
+        # Canvas items carry their own (suit, number) key, so each one is
+        # remapped exactly -- no positional zip that drifts when items and
+        # the played pile get out of step.
+        whot_photos = iter(new_whots)
+        for item, key in self._animated_images:
+            if key[0] == "Whot":
+                photo = next(whot_photos, None)
+            else:
+                photo = new_by_key.get(key)
+            if photo is not None:
+                self._played_frame.itemconfig(item, image=photo)
 
     def popup_message(
         self, title: str, text: str, duration: int = 900, wraplength: int = 140
@@ -953,16 +1039,26 @@ class Whot(images):
         self._btn_reference.append([])
         self._label_reference.append([])
 
-        self._depot_p2_btns.append(tk.Button(self._player2_frame))
+        self._depot_p2_btns.append(
+            tk.Button(self._player2_frame, bd=0, highlightthickness=0,
+                      relief="flat",
+                      activebackground=self._card_base_bg())
+        )
         self._player2_btns[max(self._player2_btns) + 1] = self._depot_p2_btns[-1]
 
         if not onlinePlayer:
-            self._depot_comp_labels.append(tk.Label(self._comp_frame))
+            self._depot_comp_labels.append(
+                tk.Label(self._comp_frame, bd=0, highlightthickness=0,
+                         relief="flat")
+            )
             self._computer_labels[
                 max(self._computer_labels) + 1
             ] = self._depot_comp_labels[-1]
         else:
-            self._depot_onlinep_labels.append(tk.Label(self._comp_frame))
+            self._depot_onlinep_labels.append(
+                tk.Label(self._comp_frame, bd=0, highlightthickness=0,
+                         relief="flat")
+            )
             self._onlinep_labels[
                 max(self._onlinep_labels) + 1
             ] = self._depot_onlinep_labels[-1]
@@ -1124,27 +1220,18 @@ class Whot(images):
     # --------------------------------------------------------------------------------------
     # ANIMATIONS
     # ---------------------------------------------------------------------------------------
-    def create_playedcard_image(self, from_theme=False):
+    def create_playedcard_image(self):
         played_canvas = self._played_frame
         image = self._whot.PlayedCards()[-1][0]
-        theme = self.get_actual_theme()
-
-        if from_theme:
-            # [played_canvas.delete(img) for img in self._animated_images]
-            [played_canvas.delete(rect) for rect in self._animated_img_rectangles]
-            self._animated_img_rectangles.clear()
+        key = self._whot.PlayedCards()[-1][1]
 
         x, y = self._playedcard_curr_xy
         image_id = played_canvas.create_image(x, y, image=image)
-        image_id_rect = played_canvas.create_rectangle(
-            *played_canvas.bbox(image_id), outline=theme, width=2
-        )
-        self._animated_images.append(image_id)
-        self._animated_img_rectangles.append(image_id_rect)
+        self._animated_images.append((image_id, key))
 
     def move_card(
         self,
-        card_image: tk.PhotoImage,
+        playcard: tuple[tk.PhotoImage, tuple[str, int]],
         player_canvas: tk.Canvas,
         played_canvas: tk.Canvas,
         widget: tk.Button | tk.Label,
@@ -1171,16 +1258,11 @@ class Whot(images):
         # Get the dynamic pos to place the played image
         x2, y2 = self._playedcard_curr_xy
 
-        cardstack_x_offset = len(self._animated_img_rectangles) / 2  # / 5
+        cardstack_x_offset = len(self._animated_images) / 2  # / 5
         # print('cardstack_x_offset -->', cardstack_x_offset, flush=True)
 
-        theme = self.get_actual_theme()
-        card = played_canvas.create_image(x1, y1, image=card_image)
-        card_rectangle = played_canvas.create_rectangle(
-            *played_canvas.bbox(card), outline=theme, width=2
-        )
-        self._animated_images.append(card)
-        self._animated_img_rectangles.append(card_rectangle)
+        card = played_canvas.create_image(x1, y1, image=playcard[0])
+        self._animated_images.append((card, playcard[1]))
 
         played_canvas.tag_raise(card)
         self.animate_frame(
@@ -1190,7 +1272,6 @@ class Whot(images):
             (x2 + cardstack_x_offset),
             y2,
             card,
-            card_rectangle,
             played_canvas,
             player_canvas,
         )
@@ -1203,17 +1284,17 @@ class Whot(images):
         target_x: float,
         target_y: float,
         card: int,
-        card_rectangle: int,
         played_canvas: ctk.CTkCanvas,
         player_canvas: ctk.CTkCanvas,
-        NUM_FRAMES=50,
-        FRAME_DURATION=10,
+        NUM_FRAMES=36,
+        FRAME_DURATION=12,
     ):
         if frame < NUM_FRAMES:
-            dx = (target_x - x) / NUM_FRAMES * 5
-            dy = (target_y - y) / NUM_FRAMES * 5
+            # Linear glide: fixed step per frame. (The old
+            # (remaining/N)*5 step arrived in ~2 frames then crawled.)
+            dx = (target_x - x) / NUM_FRAMES
+            dy = (target_y - y) / NUM_FRAMES
             played_canvas.coords(card, x, y)
-            played_canvas.coords(card_rectangle, *played_canvas.bbox(card))
             x += dx
             y += dy
             player_canvas.after(
@@ -1225,7 +1306,6 @@ class Whot(images):
                 target_x,
                 target_y,
                 card,
-                card_rectangle,
                 played_canvas,
                 player_canvas,
             )
@@ -1242,9 +1322,8 @@ class Whot(images):
 
         x, y = 0.69 * event.width - X_OFFSET, 0.55 * event.height
 
-        for img, rect in zip(self._animated_images, self._animated_img_rectangles):
+        for img, _key in self._animated_images:
             self._played_frame.coords(img, x, y)
-            self._played_frame.coords(rect, *self._played_frame.bbox(img))
         self._playedcard_curr_xy = x, y
 
     def animate_widget_clicked(self, widget: tk.Button | tk.Label):
@@ -1307,12 +1386,11 @@ class Whot(images):
         try:
             [lab.grid_forget() for lab in self._depot_onlinep_labels]
         except AttributeError as e:
-            ic(e)
+            print(e)
 
         self._market_btn.place_forget()
         self._played_frame.delete("all")
         self._animated_images.clear()
-        self._animated_img_rectangles.clear()
 
         self._whot = Main.Whot()
         self._whot.InitDepot()
@@ -1340,9 +1418,11 @@ class Whot(images):
         self.display_number_of_cards("onlinep" if onlinePlayer else "computer")
         self.root_bindings()
 
-        if not player_turn:
+        if player_turn:
+            self.set_player_turn(player_turn)
+        else:
             next_player = ("p2", "comp" if not onlinePlayer else "op")
-        self.set_player_turn(choice(next_player))
+            self.set_player_turn(choice(next_player))
         self.set_theme()
 
         return player_turn
@@ -1362,7 +1442,12 @@ class Whot(images):
         # Initialize for player2
         # +++++++++++++++++++++++
         self._btn_reference = [[] for _ in range(30)]
-        self._depot_p2_btns = [tk.Button(self._player2_frame) for _ in range(30)]
+        self._depot_p2_btns = [
+            tk.Button(self._player2_frame, bd=0, highlightthickness=0,
+                      relief="flat",
+                      activebackground=self._card_base_bg())
+            for _ in range(30)
+        ]
 
         self._player2_btns = {i: self._depot_p2_btns[i] for i in range(30)}
         player2_cards = self._player2.cards()
@@ -1382,7 +1467,8 @@ class Whot(images):
         if onlinePlayer:
             self._label_reference = [[] for _ in range(30)]
             self._depot_onlinep_labels = [
-                tk.Label(self._comp_frame, relief="raised") for _ in range(30)
+                tk.Label(self._comp_frame, bd=0, highlightthickness=0,
+                         relief="flat") for _ in range(30)
             ]
 
             self._onlinep_labels = {i: self._depot_onlinep_labels[i] for i in range(30)}
@@ -1396,7 +1482,8 @@ class Whot(images):
         else:
             self._label_reference = [[] for _ in range(30)]
             self._depot_comp_labels = [
-                tk.Label(self._comp_frame, relief="raised") for _ in range(30)
+                tk.Label(self._comp_frame, bd=0, highlightthickness=0,
+                         relief="flat") for _ in range(30)
             ]
 
             # Initialize and Display Computer Labels and Sync with their Label references (Labrefs)
@@ -1410,6 +1497,10 @@ class Whot(images):
             image=self._misc_whot,
             command=self.p2_mart,
             state="disabled",
+            bd=0,
+            highlightthickness=0,
+            relief="flat",
+            activebackground=self._card_base_bg(),
         )
         self._market_btn.place(relx=0.027, rely=0.10)
         if onlinePlayer and not self._delete_multiplayer_indicators:
@@ -1436,7 +1527,7 @@ class Whot(images):
                     self.p2_request_card_with_20(card)
 
                     self.move_card(
-                        card[0][0],
+                        card[0],
                         self._player2_frame._parent_canvas,
                         self._played_frame,
                         card_display_btn,
@@ -1586,6 +1677,10 @@ class Whot(images):
                 image=icon,
                 command=lambda i=i: command(card_buttons[i][0], card_root),
                 bg=button_theme,
+                bd=0,
+                highlightthickness=0,
+                relief="flat",
+                activebackground=button_theme,
             )
             button.grid(row=i, column=0, pady=3, padx=15)
             ctk.CTkLabel(
@@ -1631,7 +1726,7 @@ class Whot(images):
     # MULTIPLAYER
     # ----------------------------------------------------------------------------------------
     def create_multiplayer_indicators(self):
-        ic("creating multiplayer indicators")
+        print("creating multiplayer indicators")
         self._other_client_connected = False
         self._multiplayer_switch_var = tk.BooleanVar(value=True)
         self._multiplayer_switch = ctk.CTkSwitch(
@@ -1708,6 +1803,8 @@ class Whot(images):
     def generate_shuffle_seed(self) -> int:
         return int.from_bytes(os.urandom(4), "big")
 
+    MP_HANDSHAKE_TIMEOUT = 25.0  # seconds to wait for a peer before giving up
+
     def initialize_multiplayer(
         self, nickname: str, host: str = None, port: int = None, conn_use_threads=True
     ):
@@ -1733,8 +1830,18 @@ class Whot(images):
                     "nickname": nickname,
                 }
                 if conn_use_threads:
-                    self.wait_for_client_to_connect()
-                self._onlineClient.send_data(str(json.dumps(init_data)), "INIT_DATA")
+                    # Hand the blocking wait to a worker; the GUI stays live.
+                    # Completion runs on the main thread via _mp_watch.
+                    self._mp_result = None
+                    self._mp_handshake_active = True
+                    threading.Thread(
+                        target=self._host_handshake, args=(init_data,),
+                        daemon=True,
+                    ).start()
+                    self._root.after(200, self._mp_watch)
+                else:
+                    self._onlineClient.send_data(
+                        str(json.dumps(init_data)), "INIT_DATA")
             except (
                 OSError,
                 ConnectionRefusedError,
@@ -1742,43 +1849,147 @@ class Whot(images):
                 TimeoutError,
                 tk.TclError,
             ) as e:
-                ic("startMp", e)
+                print("startMp", e)
                 self._connectionFailed = True
 
         elif self._server_choice == "join server":
             if conn_use_threads:
                 self.start_mp_server_or_client_thread(self.init_client, host, port)
+                # Blocking seed-wait goes to a worker; the GUI stays live.
+                # Completion runs on the main thread via _mp_watch.
+                self._mp_result = None
+                self._mp_handshake_active = True
+                threading.Thread(
+                    target=self._join_handshake, args=(nickname,),
+                    daemon=True,
+                ).start()
+                self._root.after(200, self._mp_watch)
+            else:
+                init_data = self.get_init_data_from_server(queue.Queue)
+                print(init_data)
+                self._onlineNickname = init_data["nickname"]
+                self._onlineClient.send_data(nickname, data_type="NICKNAME")
 
-            # TODO: init_d_queue.get(block=True, timeout=10)
-            init_data = self.get_init_data_from_server(queue.Queue)
-            ic(init_data)
-            self._onlineNickname = init_data["nickname"]
-            self._onlineClient.send_data(nickname, data_type="NICKNAME")
+                if not self._connectionFailed:
+                    self.reinitialize_cards(
+                        onlinePlayer=True,
+                        shuffle_seed=init_data["seed"],
+                        conn_type="client",
+                        player_turn=init_data["player_turn"],
+                    )
+                    self.update_multiplayer_indicators()
 
-            if not self._connectionFailed:
-                self.reinitialize_cards(
-                    onlinePlayer=True,
-                    shuffle_seed=init_data["seed"],
-                    conn_type="client",
-                    player_turn=init_data["player_turn"],
-                )
-                # if conn_use_threads:
-                self.update_multiplayer_indicators()
+                cleared_init_data = self._onlineClient.client_init_data
+                for key in cleared_init_data:
+                    cleared_init_data[key] = None
 
-            cleared_init_data = self._onlineClient.client_init_data
-            for key in cleared_init_data:
-                cleared_init_data[key] = None
+        if not conn_use_threads:
+            self._finish_mp_setup()
 
+    def _finish_mp_setup(self):
+        """Shared tail of multiplayer setup (main thread)."""
+        self._mp_handshake_active = False
         if not self._connectionFailed:
-            if conn_use_threads:
-                self.start_onlineplayer_listener_thread()
+            self.start_onlineplayer_listener_thread()
         else:
-            ic("connection Failed")
-            self._title = "Whot Game"
-            self._root.title(self._title)
-            self._onlinePlayerActive = False
-            self._connectionFailed = False
-            self.__restart(force=True)
+            print("connection Failed")
+            self._mp_connect_failed("Connection Failed")
+
+    def _wait_for_peer(self, ready) -> bool:
+        """Worker-thread wait: `ready()` true means proceed; timeout/fail out."""
+        deadline = time.time() + self.MP_HANDSHAKE_TIMEOUT
+        while time.time() < deadline:
+            if self._connectionFailed:
+                return False
+            if ready():
+                return True
+            time.sleep(0.2)
+        return False
+
+    def _mp_watch(self):
+        """Main-thread watchdog: run handshake completions posted by workers.
+
+        Workers never call Tk (unsafe across threads); they only assign
+        self._mp_result. This polls it on the mainloop and dispatches.
+        """
+        try:
+            if not self._root.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        job = self._mp_result
+        self._mp_result = None
+        if job is not None:
+            kind, payload = job
+            if kind == "host-ok":
+                self._finish_mp_setup()
+            elif kind == "join-ok":
+                self._finish_join(payload)
+            elif kind == "fail":
+                self._mp_connect_failed(payload)
+        if self._mp_handshake_active:
+            self._root.after(200, self._mp_watch)
+
+    def _host_handshake(self, init_data: dict):
+        """Worker thread: publish the seed once our client is up."""
+        if not self._wait_for_peer(lambda: self._onlineClient is not None):
+            self._mp_result = ("fail", "No Client Joined")
+            return
+        try:
+            self._onlineClient.send_data(str(json.dumps(init_data)), "INIT_DATA")
+        except (OSError, AttributeError) as e:
+            print("host handshake send failed:", e)
+            self._mp_result = ("fail", "Connection Failed")
+            return
+        self._mp_result = ("host-ok", None)
+
+    def _join_handshake(self, nickname: str):
+        """Worker thread: wait for the host's seed, then join on the GUI."""
+        def seeded():
+            client = self._onlineClient
+            return client is not None and all(
+                v not in (None, "") for v in client.client_init_data.values()
+            )
+
+        if not self._wait_for_peer(seeded):
+            self._mp_result = ("fail", "No Server To Be Joined")
+            return
+        self._mp_result = ("join-ok", nickname)
+
+    def _finish_join(self, nickname: str):
+        """Main thread: complete a join after the seed arrived."""
+        self._mp_handshake_active = False
+        if self._connectionFailed or self._onlineClient is None:
+            self._mp_connect_failed("Connection Failed")
+            return
+        init_data = dict(self._onlineClient.client_init_data)
+        self._onlineNickname = init_data.get("nickname") or "OnlinePlayer"
+        try:
+            self._onlineClient.send_data(nickname, data_type="NICKNAME")
+        except (OSError, AttributeError) as e:
+            print("join nick send failed:", e)
+            self._mp_connect_failed("Connection Failed")
+            return
+        self.reinitialize_cards(
+            onlinePlayer=True,
+            shuffle_seed=init_data.get("seed"),
+            conn_type="client",
+            player_turn=init_data.get("player_turn"),
+        )
+        self.update_multiplayer_indicators()
+        for key in self._onlineClient.client_init_data:
+            self._onlineClient.client_init_data[key] = None
+        self._finish_mp_setup()
+
+    def _mp_connect_failed(self, message="Connection Failed"):
+        """Main thread: tear down a failed handshake and restart locally."""
+        self._mp_handshake_active = False
+        self.message_box("Connection Failed", message, icon="cancel")
+        self._title = "Whot Game"
+        self._root.title(self._title)
+        self._onlinePlayerActive = False
+        self._connectionFailed = False
+        self.__restart(force=True)
 
     def start_multiplayer_server_client(self, event=None):
         if self._delay_multiplayer_for_animations:
@@ -1802,7 +2013,6 @@ class Whot(images):
         self._server_choice = server_choice
         self._title += " - MULTIPLAYER"
         self._root.title(self._title)
-        ic(server_choice)
 
         self.initialize_multiplayer(
             nickname=nickname, host=host, port=port, conn_use_threads=True
@@ -1899,10 +2109,6 @@ class Whot(images):
         init_thread = threading.Thread(target=target, args=(host, port))
         init_thread.start()
 
-    def start_onlineplayer_listener_thread(self):
-        listen_op_thread = threading.Thread(target=self.onlineplayer_listener)
-        listen_op_thread.start()
-
     def init_server(self, host: str, port: int):
         try:
             server = multiplayer.Server(host, port)
@@ -1918,7 +2124,7 @@ class Whot(images):
         try:
             nickname = self._config["name"]
             client = multiplayer.Client(host, port, nickname)
-        except (ConnectionRefusedError, TimeoutError) as e:
+        except (ConnectionRefusedError, TimeoutError, OSError) as e:
             print(e)
             self._connectionFailed = True
         else:
@@ -1926,87 +2132,73 @@ class Whot(images):
             print("client -->", self._onlineClient)
             return client
 
-    def wait_for_client_to_connect(self, sleep_duration=1) -> bool:
-        """
-        Returns:
-            bool: True if a client successfully connects, False otherwise.
-        """
-        while self._onlineClient is None and self._onlinePlayerActive:
-            if self._connectionFailed:
-                self.message_box(
-                    "Connection Failed", "No Server To Be Joined", icon="cancel"
-                )
-                return False
-            time.sleep(sleep_duration)
-        ic("client connected")
-        return True
+    def start_onlineplayer_listener_thread(self):
+        """Poll the network state on the mainloop (no thread, no Tk races).
 
-    def get_init_data_from_server(self, init_data_queue: queue.Queue):
-        if not self.wait_for_client_to_connect():
+        Keeps the historical name; call sites are unchanged.
+        """
+        self._poll_onlinep_once()
+
+    def _poll_onlinep_once(self):
+        try:
+            if not self._root.winfo_exists():
+                return
+        except tk.TclError:
+            return  # root gone (shutdown); stop the chain silently
+        if not self._onlinePlayerActive or self._onlineClient is None:
             return
-
-        client_init_data = self._onlineClient.client_init_data
-        while self._onlinePlayerActive and not all(client_init_data.values()):
-            print(
-                "client_init_data values -->",
-                client_init_data.values(),
-                all(client_init_data.values()),
-            )
-            time.sleep(0.5)
-        # init_data_queue.put(client_init_data)
-        return client_init_data
+        self.onlineplayer_listener()
+        self._root.after(250, self._poll_onlinep_once)
 
     # ------------------------------------------------------------------------------------
     # ONLINEPLAYER
     # ------------------------------------------------------------------------------------
     def onlineplayer_listener(self):
-        self.wait_for_client_to_connect(2.5)
+        """Single main-thread pass over the latest network state."""
+        if self._onlineClient is None:
+            return
+        client_data = self._onlineClient.client_data
 
-        while self._onlinePlayerActive and self._onlineClient._client_is_alive:
-            client_data = self._onlineClient.client_data
+        nick: str = client_data["conn_nickname"]
+        other_client_alive = self._onlineClient._other_client_alive
+        card_index = client_data["card_index"]
+        card = client_data["card"]
+        mart = client_data["mart"]
+        request = client_data["request"]
 
-            nick: str = client_data["conn_nickname"]
-            other_client_alive = self._onlineClient._other_client_alive
-            card_index = client_data["card_index"]
-            card = client_data["card"]
-            mart = client_data["mart"]
-            request = client_data["request"]
+        if nick:
+            self._onlineNickname = nick
+            self.display_number_of_cards("onlinep")
+            self._comp_turn_indicator.configure(text=nick.capitalize())
+            client_data["conn_nickname"] = None
+            self.update_multiplayer_indicators()  # server_choice: start server
 
-            if nick:
-                self._onlineNickname = nick
-                self.display_number_of_cards("onlinep")
-                self._comp_turn_indicator.configure(text=nick.capitalize())
-                client_data["conn_nickname"] = None
-                self.update_multiplayer_indicators()  # server_choice: start server
+        if other_client_alive is False:
+            self.message_box(
+                "CLIENT ERROR",
+                f"{self._onlineNickname or 'OnlinePlayer'} Disconnected!",
+                icon="cancel",
+            )
+            self.__restart(force=True)
 
-            if other_client_alive is False:
-                self.message_box(
-                    "CLIENT ERROR",
-                    f"{self._onlineNickname or 'OnlinePlayer'} Disconnected!",
-                    icon="cancel",
-                )
-                self.__restart(force=True)
+        if card_index:
+            self.set_player_turn("op")
+            self.onlinep_play(self._label_reference[card_index])
 
-            if card_index:
-                self.set_player_turn("op")
-                self.onlinep_play(self._label_reference[index])
+        if card:
+            print("\n@@@@ onlineP sent card", card)
+            index = self.get_onlinep_card_index(card)
+            self.set_player_turn("op")
+            self.onlinep_play(self._label_reference[index])
 
-            if card:
-                print("\n@@@@ onlineP sent card", card)
-                index = self.get_onlinep_card_index(card)
-                self.set_player_turn("op")
-                self.onlinep_play(self._label_reference[index])
+        if mart:  # Set for OP to play again
+            print("\n!!!! onlinep went to mart")
+            self.set_player_turn("op")
+            self.onlinep_mart()
 
-            if mart:  # Set for OP to play again
-                print("\n!!!! onlinep went to mart")
-                self.set_player_turn("op")
-                self.onlinep_mart()
-
-            if request:
-                print("\n$$$$ onlinep sent request")
-                self.onlinep_request_card_with_20(request)
-
-            time.sleep(0.5)
+        if request:
+            print("\n$$$$ onlinep sent request")
+            self.onlinep_request_card_with_20(request)
 
     def get_onlinep_card_index(self, card: tuple[str, int]):
         print("finding card...")
@@ -2123,7 +2315,7 @@ class Whot(images):
                     is_gridded=True
                 )
                 self.move_card(
-                    card[0][0],
+                    card[0],
                     self._comp_frame._parent_canvas,
                     self._played_frame,
                     card_display_label,
@@ -2190,7 +2382,7 @@ class Whot(images):
                     is_gridded=True
                 )
                 self.move_card(
-                    card[0][0],
+                    card[0],
                     self._comp_frame._parent_canvas,
                     self._played_frame,
                     card_display_label,

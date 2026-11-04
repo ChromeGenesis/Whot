@@ -14,7 +14,7 @@ Located in the menu for how to play and other rules
 # Usage (Mainly for windows | linux has some issues with the GUI)
 * git clone https://github.com/ChromeGenesis/Whot/
 * cd Whot
-* pip install customtkinter CTkMessagebox tkthread icecream
+* pip install customtkinter CTkMessagebox pillow
 * python3 Whot.pyw
 
 # Notes
@@ -23,8 +23,10 @@ Located in the menu for how to play and other rules
 * `config.json` is created on first run (name/theme/appearance/mode) and is not tracked.
 
 # Card art
-* Original vector sources live in `assets/svg/<light|dark>/` (our own drawing,
-  no third-party art).
-* `python assets/render_cards.py` re-renders every PNG (`DIY/`, `DIY-dark/`,
-  `cards/`, `cards-dark/`) via headless Chrome. Needs Chrome + Pillow, dev
-  machine only — the game itself loads plain PNGs and needs neither.
+* Single vector spec in `CardArt.py` (master SVG frame + suit/number/palette
+  substitution). Runtime cards are rasterized in memory with Pillow --
+  Tkinter cannot display SVG and no cairo is needed.
+* `python assets/build_cards_svg.py` stamps the committed vector sources in
+  `assets/svg/<light|dark>/` from that same spec (fast, no Chrome).
+* The game rasterizes cards in memory at startup, so it needs Pillow
+  at runtime (no image files, no Chrome, no cairo).
