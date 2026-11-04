@@ -41,8 +41,9 @@ class Whot(images):
         self._config: dict[str, str | bool | dict[str, str | int]] = {}
         self.load_config_file()
         # Theme our own card art to the appearance setting before the engine
-        # copies image references in InitDepot(). Our PNGs are 3 flat colors,
-        # so dark mode is just a palette remap (see GameImages.apply_theme).
+        # copies image references in InitDepot(). Art is vector-authored in
+        # assets/svg/ and pre-rendered to DIY/ + DIY-dark/ (see
+        # assets/render_cards.py), so this just picks the matching tree.
         self.apply_theme(self._config.get("appearance", "dark") == "dark")
 
         self._playedcard_curr_xy: tuple[float, float] = (0, 0)
