@@ -40,6 +40,10 @@ class Whot(images):
         self._config_location = "./config.json"
         self._config: dict[str, str | bool | dict[str, str | int]] = {}
         self.load_config_file()
+        # Theme our own card art to the appearance setting before the engine
+        # copies image references in InitDepot(). Our PNGs are 3 flat colors,
+        # so dark mode is just a palette remap (see GameImages.apply_theme).
+        self.apply_theme(self._config.get("appearance", "dark") == "dark")
 
         self._playedcard_curr_xy: tuple[float, float] = (0, 0)
         self._animated_images: list[int] = []
@@ -435,6 +439,14 @@ class Whot(images):
         )
         self._played_frame.configure(background=theme)
         self._write_config("appearance", self._appearance_var.get())
+        # Card faces are themed at load; a mid-game appearance flip needs a
+        # restart to retheme them (theme_callback set = tracker echo, skip).
+        if theme_callback is None and (
+            (self._appearance_var.get() == "dark") != images.cards_dark
+        ):
+            self.popup_message(
+                "Card Theme", "Restart the game to retheme the cards", 1500
+            )
 
     def gameover(self):
         """Freezes all buttons and stops the computer | player2 | onlinep from playing
@@ -1309,6 +1321,9 @@ class Whot(images):
         self._onlinep = Main.OnlinePlayer()
 
         self._whot.Reset()
+        dark = self._config.get("appearance", "dark") == "dark"
+        self.apply_theme(dark)
+        self._whot.apply_theme(dark)
         self._whot.InitPlayerCards(onlinePlayer, conn_type)
         self._whot.InitComputerCards()
         self._whot.InitPlayer2Cards()
