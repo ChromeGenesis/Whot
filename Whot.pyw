@@ -438,6 +438,18 @@ class Whot(images):
             or self._appearance_var.get()
         )
         self._played_frame.configure(background=theme)
+        # One continuous table felt: hand zones match the played zone and
+        # the scrollbar troughs go invisible until hovered.
+        for zone in (self._player2_frame, self._comp_frame):
+            try:
+                zone.configure(
+                    fg_color=theme,
+                    scrollbar_fg_color="transparent",
+                    scrollbar_button_color="#7A7A82",
+                    scrollbar_button_hover_color="#A8A8AE",
+                )
+            except tk.TclError:
+                pass
         self._write_config("appearance", self._appearance_var.get())
         # Card faces retheme live now -- no restart needed.
         if theme_callback is None and (
@@ -1041,7 +1053,7 @@ class Whot(images):
 
         self._depot_p2_btns.append(
             tk.Button(self._player2_frame, bd=0, highlightthickness=0,
-                      relief="flat",
+                      relief="flat", cursor="hand2",
                       activebackground=self._card_base_bg())
         )
         self._player2_btns[max(self._player2_btns) + 1] = self._depot_p2_btns[-1]
@@ -1444,7 +1456,7 @@ class Whot(images):
         self._btn_reference = [[] for _ in range(30)]
         self._depot_p2_btns = [
             tk.Button(self._player2_frame, bd=0, highlightthickness=0,
-                      relief="flat",
+                      relief="flat", cursor="hand2",
                       activebackground=self._card_base_bg())
             for _ in range(30)
         ]
@@ -1500,6 +1512,7 @@ class Whot(images):
             bd=0,
             highlightthickness=0,
             relief="flat",
+            cursor="hand2",
             activebackground=self._card_base_bg(),
         )
         self._market_btn.place(relx=0.027, rely=0.10)
@@ -1680,6 +1693,7 @@ class Whot(images):
                 bd=0,
                 highlightthickness=0,
                 relief="flat",
+                cursor="hand2",
                 activebackground=button_theme,
             )
             button.grid(row=i, column=0, pady=3, padx=15)
@@ -2019,7 +2033,7 @@ class Whot(images):
         )
 
     def multiplayer_gui(self) -> tuple[str, int, str, str] | None:
-        root = self.create_toplevel_at_center(width=274, height=168)
+        root = self.create_toplevel_at_center(width=300, height=196)
         root.transient(self._root)
         root.resizable(False, False)
         root.title("Multiplayer")
@@ -2034,19 +2048,19 @@ class Whot(images):
 
         ctk.CTkLabel(
             root, height=23, width=38, text="Host:", font=self.smaller_font
-        ).place(relx=0.036, rely=0.06)
+        ).place(relx=0.033, rely=0.05)
         ctk.CTkLabel(
             root, height=23, width=38, text="Port:", font=self.smaller_font
-        ).place(relx=0.036, rely=0.290)
+        ).place(relx=0.033, rely=0.26)
 
         host_entry = ctk.CTkEntry(
-            root, width=170, textvariable=host_var, font=self.smaller_font
+            root, width=180, textvariable=host_var, font=self.smaller_font
         )
-        host_entry.place(relx=0.31, rely=0.071)
+        host_entry.place(relx=0.30, rely=0.06)
         port_entry = ctk.CTkEntry(
-            root, width=170, textvariable=port_var, font=self.smaller_font
+            root, width=180, textvariable=port_var, font=self.smaller_font
         )
-        port_entry.place(relx=0.31, rely=0.295)
+        port_entry.place(relx=0.30, rely=0.27)
 
         start_server = ctk.CTkRadioButton(
             root,
@@ -2056,7 +2070,7 @@ class Whot(images):
             value="start server",
             font=self.smaller_font,
         )
-        start_server.place(relx=0.04, rely=0.620)
+        start_server.place(relx=0.04, rely=0.58)
         join_server = ctk.CTkRadioButton(
             root,
             height=25,
@@ -2065,7 +2079,7 @@ class Whot(images):
             value="join server",
             font=self.smaller_font,
         )
-        join_server.place(relx=0.605, rely=0.620)
+        join_server.place(relx=0.58, rely=0.58)
 
         def close_window(exit_btn=False):
             nonlocal return_value
@@ -2094,7 +2108,7 @@ class Whot(images):
             font=self.smaller_font,
             command=close_window,
         )
-        connect_btn.place(relx=0.35, rely=0.805)
+        connect_btn.place(relx=0.36, rely=0.79)
         host_entry.select_range(0, tk.END), port_entry.select_range(0, tk.END)
 
         root.protocol("WM_DELETE_WINDOW", lambda: close_window(exit_btn=True))
