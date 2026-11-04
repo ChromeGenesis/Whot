@@ -35,6 +35,17 @@ class Whot(images):
         Whot.Cards = self._DepotMarket.copy()
         shuffle(Whot.Cards)
 
+    def shuffle_cards(self, shuffle_seed: int=None):
+        'Shuffle the depot cards (local compat: GUI calls this, engine never defined it)'
+        if shuffle_seed is not None:
+            random.seed(shuffle_seed)
+        shuffle(Whot.Cards)
+
+    def Reset(self):
+        'Reset played cards and requests (local compat: GUI calls Reset(), engine has ResetRequests)'
+        self.PlayedCards().clear()
+        self.ResetRequests()
+
     def ResetRequests(self):
         Whot.requests = {
             'player2': None,

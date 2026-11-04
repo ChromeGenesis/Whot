@@ -79,6 +79,8 @@ class Whot(images):
         self._computer = Main.Computer()
         self._player2 = Main.Player2()
         self._onlinep = Main.OnlinePlayer()
+        self._whot.InitComputerCards()
+        self._whot.InitPlayer2Cards()
         self._whot.NormCards()
 
         self._onlinePlayerActive = False
@@ -1308,6 +1310,8 @@ class Whot(images):
 
         self._whot.Reset()
         self._whot.InitPlayerCards(onlinePlayer, conn_type)
+        self._whot.InitComputerCards()
+        self._whot.InitPlayer2Cards()
         self._whot.NormCards()
 
         self.__check_gameover = False
